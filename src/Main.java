@@ -6,7 +6,7 @@ public class Main {
         Scanner sc = new Scanner(System.in);
         int row = sc.nextInt();
         int col = sc.nextInt();
-        int[][] boardgrid = new int[row][col];
+        int[][] boarderid = new int[row][col];
 
         System.out.println();
         System.out.print("   ");
