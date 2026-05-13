@@ -1,8 +1,56 @@
 import java.util.*;
+import java.util.regex.*;
 
 enum Direction {
     HORIZONTAL,
     VERTICAL
+}
+
+enum Difficulty {
+    EASY,
+    MEDIUM,
+    HARD,
+    EXTREME
+}
+
+final class Colors {
+
+    public static String parse(String text) {
+        StringBuilder out = new StringBuilder();
+
+        for (int i = 0; i < text.length(); ) {
+
+            if (i + 7 < text.length()
+                    && text.charAt(i) == '{'
+                    && text.charAt(i + 7) == '}') {
+
+                String hex = text.substring(i + 1, i + 7);
+
+                try {
+                    int rgb = Integer.parseInt(hex, 16);
+
+                    int r = (rgb >> 16) & 0xFF;
+                    int g = (rgb >> 8) & 0xFF;
+                    int b = rgb & 0xFF;
+
+                    out.append("\u001B[38;2;")
+                            .append(r).append(";")
+                            .append(g).append(";")
+                            .append(b).append("m");
+
+                    i += 8;
+                    continue;
+
+                } catch (Exception ignored) {}
+            }
+
+            out.append(text.charAt(i));
+            i++;
+        }
+
+        out.append("\u001B[0m");
+        return out.toString();
+    }
 }
 
 abstract class Ship {
@@ -13,14 +61,31 @@ abstract class Ship {
 
     protected int row;
     protected int col;
+    protected int hp;
+    protected int maxHp;
     protected Direction direction;
 
-    public Ship(String name, int width, int height) {
+    public Ship(String name, int width, int height, int hp) {
         this.name = name;
         this.width = width;
         this.height = height;
 
+        this.hp = hp;
+        this.maxHp = hp;
+
         direction = Direction.HORIZONTAL;
+    }
+
+    public void takeDamage() {
+        hp--;
+    }
+
+    public boolean isSunk() {
+        return hp <= 0;
+    }
+
+    public int getHp() {
+        return hp;
     }
 
     public void place(int row, int col) {
@@ -67,27 +132,30 @@ abstract class Ship {
 class Destroyer extends Ship {
 
     public Destroyer() {
-        super("Destroyer", 2, 1);
+        super("Destroyer", 2, 1, 1);
     }
 }
 
 class Battleship extends Ship {
 
     public Battleship() {
-        super("Battleship", 2, 2);
+        super("Battleship", 2, 2, 1);
     }
 }
 
 class Submarine extends Ship {
 
     public Submarine() {
-        super("Submarine", 3, 1);
+        super("Submarine", 3, 1, 1);
     }
 }
 
 class Tile {
 
     private Ship ship;
+    private boolean attacked;
+
+    private boolean recentlyAttacked;
 
     public boolean hasShip() {
         return ship != null;
@@ -99,6 +167,26 @@ class Tile {
 
     public Ship getShip() {
         return ship;
+    }
+
+    public boolean isAttacked() {
+        return attacked;
+    }
+
+    public void attack() {
+        attacked = true;
+
+        if(ship != null) {
+            ship.takeDamage();
+        }
+    }
+
+    public boolean isRecentlyAttacked() {
+        return recentlyAttacked;
+    }
+
+    public void setRecentlyAttacked(boolean value) {
+        recentlyAttacked = value;
     }
 }
 
@@ -123,6 +211,10 @@ class Board {
         }
     }
 
+    public Tile getTile(int row, int col) {
+        return grid[row][col];
+    }
+
     public boolean canPlaceShip(Ship ship, int row, int col) {
         if (row + ship.getActualHeight() > rows ||
                 col + ship.getActualWidth() > cols) {
@@ -137,6 +229,19 @@ class Board {
                 }
             }
         }
+
+        return true;
+    }
+
+    public boolean attackTile(int row, int col) {
+
+        Tile tile = grid[row][col];
+
+        if (tile.isAttacked()) {
+            return false;
+        }
+
+        tile.attack();
 
         return true;
     }
@@ -159,25 +264,55 @@ class Board {
         return true;
     }
 
-    public void display() {
+    public void displayPlayerBoard() {
+
+        System.out.print("   ");
+
+        for (int c = 0; c < cols; c++) {
+            System.out.printf("%2d ", c);
+        }
+
+        System.out.println();
 
         for (int r = 0; r < rows; r++) {
 
+            System.out.printf("%2d ", r);
+
             for (int c = 0; c < cols; c++) {
 
-                if (grid[r][c].hasShip()) {
+                Tile tile = grid[r][c];
 
-                    Ship s = grid[r][c].getShip();
+                if (tile.isRecentlyAttacked()) {
 
-                    switch(s){
+                    System.out.print(Colors.parse(" {FFFF00}X "));
+                }
+
+                else if (tile.isAttacked() && tile.hasShip()) {
+
+                    System.out.print(Colors.parse(" {FF0000}X "));
+                }
+
+                else if (tile.isAttacked()) {
+
+                    System.out.print(Colors.parse(" {00FFFF}X "));
+                }
+
+                else if (tile.hasShip()) {
+
+                    Ship s = tile.getShip();
+
+                    switch (s) {
+
                         case Battleship b -> System.out.print(" B ");
                         case Submarine su -> System.out.print(" S ");
                         case Destroyer d -> System.out.print(" D ");
-                        case null -> System.out.print(" . ");
-                        default -> System.out.print(" . ");
+
+                        default -> System.out.print(" ? ");
                     }
-                    //System.out.print(" S ");
-                } else {
+                }
+
+                else {
+
                     System.out.print(" . ");
                 }
             }
@@ -185,7 +320,72 @@ class Board {
             System.out.println();
         }
     }
+
+    public void displayHidden() {
+
+        System.out.print("   ");
+
+        for(int c = 0; c < cols; c++) {
+            System.out.printf("%2d ", c);
+        }
+
+        System.out.println();
+
+        for(int r = 0; r < rows; r++) {
+
+            System.out.printf("%2d ", r);
+
+            for(int c = 0; c < cols; c++) {
+
+                Tile tile = grid[r][c];
+
+                if(tile.isAttacked()) {
+
+                    if(tile.hasShip()) {
+                        System.out.print(" X ");
+                    } else {
+                        System.out.print(" O ");
+                    }
+
+                } else {
+
+                    System.out.print(" . ");
+                }
+            }
+
+            System.out.println();
+        }
+    }
+
+    public void clearRecentAttacks() {
+
+        for(int r = 0; r < rows; r++) {
+
+            for(int c = 0; c < cols; c++) {
+
+                grid[r][c].setRecentlyAttacked(false);
+            }
+        }
+    }
 }
+
+class AttackMemory {
+
+    int row;
+    int col;
+
+    boolean hit;
+
+    int turnNumber;
+
+    public AttackMemory(int row, int col, boolean hit, int turnNumber) {
+        this.row = row;
+        this.col = col;
+        this.hit = hit;
+        this.turnNumber = turnNumber;
+    }
+}
+
 
 class Player {
 
@@ -205,15 +405,38 @@ class Player {
     public void addShip(Ship ship) {
         ships.add(ship);
     }
+
+    public boolean allShipsSunk() {
+
+        for(Ship ship : ships) {
+
+            if(!ship.isSunk()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }
 
 class AIPlayer extends Player {
 
     private Random random;
 
+    private List<AttackMemory> memory;
+    private Difficulty difficulty;
+    private int currentTurn;
+
     public AIPlayer(int rows, int cols) {
         super(rows, cols);
         random = new Random();
+
+        memory = new ArrayList<>();
+        currentTurn = 0;
+    }
+
+    public void setDifficulty(Difficulty difficulty) {
+        this.difficulty = difficulty;
     }
 
     public Ship randomShip() {
@@ -248,6 +471,132 @@ class AIPlayer extends Player {
 
         System.out.println("AI placed " + ship.getName());
     }
+    public void processMemoryForget() {
+
+        Iterator<AttackMemory> iterator = memory.iterator();
+
+        while(iterator.hasNext()) {
+
+            AttackMemory mem = iterator.next();
+
+            int age = currentTurn - mem.turnNumber;
+
+            int forgetChance = 0;
+
+            switch(difficulty) {
+
+                case EASY -> {
+
+                    if(age >= 2 && age <= 3)
+                        forgetChance = 30;
+
+                    else if(age >= 4 && age <= 5)
+                        forgetChance = 35;
+
+                    else if(age >= 6)
+                        forgetChance = 40;
+                }
+
+                case MEDIUM -> {
+
+                    if(age >= 3 && age <= 4)
+                        forgetChance = 20;
+
+                    else if(age >= 5 && age <= 6)
+                        forgetChance = 25;
+
+                    else if(age >= 7)
+                        forgetChance = 30;
+                }
+
+                case HARD -> {
+
+                    if(mem.hit)
+                        continue;
+
+                    if(age >= 3 && age <= 4)
+                        forgetChance = 10;
+
+                    else if(age >= 5 && age <= 6)
+                        forgetChance = 15;
+
+                    else if(age >= 7)
+                        forgetChance = 20;
+                }
+
+                case EXTREME -> {
+                    continue;
+                }
+            }
+
+            int roll = random.nextInt(100);
+
+            if(roll < forgetChance) {
+                iterator.remove();
+            }
+        }
+    }
+
+    private boolean alreadyRemembered(int row, int col) {
+
+        for(AttackMemory mem : memory) {
+
+            if(mem.row == row && mem.col == col) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public void performTurn(Player target) {
+        target.getBoard().clearRecentAttacks();
+
+        currentTurn++;
+
+        processMemoryForget();
+
+        int attacks = 0;
+
+        while(attacks < 3) {
+
+            int row = random.nextInt(10);
+            int col = random.nextInt(10);
+
+            if(alreadyRemembered(row, col)) {
+                continue;
+            }
+
+            Tile tile = target.getBoard().getTile(row, col);
+
+            tile.setRecentlyAttacked(true);
+
+            target.getBoard().attackTile(row, col);
+
+            boolean hit = tile.hasShip();
+
+            memory.add(new AttackMemory(row, col, hit, currentTurn));
+
+            System.out.println("\nAI attacked (" + row + ", " + col + ")");
+
+            if(hit) {
+
+                Ship ship = tile.getShip();
+
+                System.out.println("AI HIT your " + ship.getName() + "!");
+
+                if(ship.isSunk()) {
+                    System.out.println("Your " + ship.getName() + " SUNK!");
+                }
+
+            } else {
+
+                System.out.println("AI MISSED!");
+            }
+
+            attacks++;
+        }
+    }
 }
 
 class Game {
@@ -267,9 +616,43 @@ class Game {
         scanner = new Scanner(System.in);
     }
 
+    private Difficulty chooseDifficulty() {
+
+        while(true) {
+
+            System.out.println("""
+                Choose Difficulty:
+                1. Easy
+                2. Medium
+                3. Hard
+                4. Extreme
+                """);
+
+            int choice = scanner.nextInt();
+
+            switch(choice) {
+
+                case 1:
+                    return Difficulty.EASY;
+
+                case 2:
+                    return Difficulty.MEDIUM;
+
+                case 3:
+                    return Difficulty.HARD;
+
+                case 4:
+                    return Difficulty.EXTREME;
+
+                default:
+                    System.out.println("Invalid choice!");
+            }
+        }
+    }
+
     public void start() {
 
-        System.out.println("=== PLAYER SETUP ===");
+        System.out.println(Colors.parse("{FF0000}=== PLAYER SETUP ==="));
 
         for (int i = 0; i < SHIP_COUNT; i++) {
 
@@ -303,7 +686,7 @@ class Game {
 
             player.addShip(ship);
 
-            player.getBoard().display();
+            player.getBoard().displayPlayerBoard();
         }
 
         System.out.println("\n=== AI SETUP ===");
@@ -323,10 +706,36 @@ class Game {
         }
 
         System.out.println("\nPLAYER BOARD:");
-        player.getBoard().display();
+        player.getBoard().displayPlayerBoard();
 
-        System.out.println("\nAI BOARD:");
-        ai.getBoard().display();
+        Difficulty diff = chooseDifficulty();
+
+        ai.setDifficulty(diff);
+
+        System.out.println("\n=== GAME START ===");
+
+        while(true) {
+
+            playerTurn();
+
+            if(ai.allShipsSunk()) {
+
+                System.out.println("\nPLAYER WINS!");
+                break;
+            }
+
+            ai.performTurn(player);
+
+            if(player.allShipsSunk()) {
+
+                System.out.println("\nAI WINS!");
+                break;
+            }
+
+            System.out.println("\n=== PLAYER BOARD ===");
+
+            player.getBoard().displayPlayerBoard();
+        }
     }
 
     private Ship chooseShip() {
@@ -356,6 +765,53 @@ class Game {
                 default:
                     System.out.println("Invalid choice!");
             }
+        }
+    }
+
+    private void playerTurn() {
+
+        System.out.println("\n=== PLAYER TURN ===");
+
+        int attacks = 0;
+
+        while(attacks < 3) {
+
+            System.out.println("\nAI BOARD:");
+
+            ai.getBoard().displayHidden();
+
+            System.out.print("Attack Row: ");
+            int row = scanner.nextInt();
+
+            System.out.print("Attack Col: ");
+            int col = scanner.nextInt();
+
+            Tile tile = ai.getBoard().getTile(row, col);
+
+            if(tile.isAttacked()) {
+
+                System.out.println("Tile already attacked!");
+                continue;
+            }
+
+            ai.getBoard().attackTile(row, col);
+
+            if(tile.hasShip()) {
+
+                Ship ship = tile.getShip();
+
+                System.out.println("HIT on " + ship.getName() + "!");
+
+                if(ship.isSunk()) {
+                    System.out.println(ship.getName() + " SUNK!");
+                }
+
+            } else {
+
+                System.out.println("MISS!");
+            }
+
+            attacks++;
         }
     }
 }
