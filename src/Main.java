@@ -366,6 +366,8 @@ public class Main {
 
         Game game = new Game();
 
-        game.start();
+        sc.close();
+
+        // tes push: Angga
     }
 }
