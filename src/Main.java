@@ -254,6 +254,46 @@ class Submarine extends Ship {
     public Submarine() {
         super("Submarine", 3, 1, 1);
     }
+
+    @Override
+    public void useSkill(Board enemyBoard, Scanner scanner) {
+
+        if (skillUsed) {
+            System.out.println("Submarine skill already used!");
+            return;
+        }
+
+        System.out.println("\n === SUBMARINE SKILL: SONAR SCAN ===");
+
+        System.out.println("Scan Row: ");
+        int row = scanner.nextInt();
+
+        System.out.println("Scan Col: ");
+        int col = scanner.nextInt();
+
+        boolean detected = false;
+
+        for (int r = row; r < row + 2; r++) {
+            for (int c = col; c < col + 2; c++) {
+                try {
+
+                    Tile tile = enemyBoard.getTile(r, c);
+
+                    if (tile.hasShip()) {
+                        detected = true;
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
+        if (detected) {
+            System.out.println("SONAR DETECTED ENEMY SHIP");
+        } else {
+            System.out.println("No enemy detected.");
+        }
+
+        skillUsed = true;
+    }
 }
 
 class Tile {
