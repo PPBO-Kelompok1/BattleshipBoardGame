@@ -1,3 +1,4 @@
+import java.sql.SQLOutput;
 import java.util.*;
 import java.util.regex.*;
 
@@ -199,6 +200,52 @@ class Battleship extends Ship {
 
     public Battleship() {
         super("Battleship", 2, 2, 1);
+    }
+
+    @Override
+    public void useSkill(Board enemyBoard, Scanner scanner) {
+
+        if (skillUsed) {
+            System.out.println("Battleship skill already used!");
+            return;
+        }
+
+        System.out.println("\n=== BATTLESHIP SKILL: AREA BOMBARDMENT ===");
+
+        System.out.println("Center Row: ");
+        int row = scanner.nextInt();
+
+        System.out.println("Centel Col: ");
+        int col = scanner.nextInt();
+
+        for (int r = row; r < row + 2; r++) {
+            for (int c = col; c < col + 2; c++) {
+                try {
+
+                    Tile tile = enemyBoard.getTile(r, c);
+
+                    if (tile.isAttacked()) {
+                        continue;
+                    }
+
+                    enemyBoard.attackTile(r, c);
+
+                    if (tile.hasShip()) {
+                        Ship ship = tile.getShip();
+
+                        System.out.println("HIT at (" + r + "," + c + ")");
+
+                        if (ship.isSunk()) {
+                            System.out.println(ship.getName() + " SUNK!");
+                        }
+                    } else {
+                        System.out.println("MISS at (" + r + "," + c + ")");
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
+        skillUsed = true;
     }
 }
 
