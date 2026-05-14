@@ -918,6 +918,18 @@ class Game {
 
         System.out.println("\n=== PLAYER TURN ===");
 
+        System.out.println("""
+                1. Normal Attack
+                2. Use Skill
+                """);
+
+        int choice = scanner.nextInt();
+
+        if (choice == 2) { // Jika player memilih untuk menggunakan skill
+            usePlayerSkill();
+            return;
+        }
+
         int attacks = 0;
 
         while(attacks < 3) {
@@ -959,6 +971,28 @@ class Game {
 
             attacks++;
         }
+    }
+
+    private void usePlayerSkill() {
+        System.out.println("\nChoose Ship Skill:");
+
+        for (int i = 0; i < player.ships.size(); i++) { // Menampilkan ship(s) yang ada
+
+            Ship ship = player.ships.get(i);
+
+            System.out.println((i + 1) + ". " + ship.getName());
+        }
+
+        int choice = scanner.nextInt(); // Pilih ship untuk menyerang
+
+        if (choice < 1 || choice > player.ships.size()) {
+            System.out.println("Invalid choice!");
+            return;
+        }
+
+        Ship ship = player.ships.get(choice - 1);
+
+        ship.useSkill(ai.getBoard(), scanner); // Jalankan skill milik ship yang dipilih untuk menyerang
     }
 }
 
