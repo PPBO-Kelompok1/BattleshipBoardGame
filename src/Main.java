@@ -148,6 +148,51 @@ class Destroyer extends Ship {
     public Destroyer() {
         super("Destroyer", 2, 1, 1);
     }
+
+    @Override
+    public void useSkill(Board enemyBoard, Scanner scanner) {
+
+        if(skillUsed) {
+            System.out.println("Destroyer skill already used!");
+            return;
+        }
+
+        System.out.println("\n=== DESTTROYER SKILL: DOUBLE STRIKE ===");
+
+        for(int i = 1; i <= 2; i++) {
+            System.out.println("Attack #" + i);
+
+            System.out.println("Row: ");
+            int row = scanner.nextInt();
+
+            System.out.println("Col: ");
+            int col = scanner.nextInt();
+
+            Tile tile = enemyBoard.getTile(row, col);
+
+            if(tile.isAttacked()) {
+                System.out.println("Tile already attacked!");
+                i--;
+                continue;
+            }
+
+            enemyBoard.attackTile(row, col);
+
+            if(tile.hasShip()) {
+                Ship ship = tile.getShip();
+
+                System.out.println("HIT on " + ship.getName());
+
+                if(ship.isSunk()) {
+                    System.out.println(ship.getName() + " SUNK!");
+                }
+            } else {
+                System.out.println("MISS!");
+            }
+        }
+
+        skillUsed = true;
+    }
 }
 
 class Battleship extends Ship {
