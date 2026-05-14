@@ -65,6 +65,8 @@ abstract class Ship {
     protected int maxHp;
     protected Direction direction;
 
+    protected boolean skillUsed;
+
     public Ship(String name, int width, int height, int hp) {
         this.name = name;
         this.width = width;
@@ -74,6 +76,8 @@ abstract class Ship {
         this.maxHp = hp;
 
         direction = Direction.HORIZONTAL;
+
+        skillUsed = false;
     }
 
     public void takeDamage() {
@@ -127,6 +131,16 @@ abstract class Ship {
     public Direction getDirection() {
         return direction;
     }
+
+    public boolean isSkillUsed() {
+        return skillUsed;
+    }
+
+    public void resetSkill() {
+        skillUsed = false;
+    }
+
+    public abstract void useSkill(Board enemyBoard, Scanner scanner);
 }
 
 class Destroyer extends Ship {
