@@ -61,32 +61,19 @@ abstract class Ship {
 
     protected int row;
     protected int col;
-    protected int hp;
-    protected int maxHp;
     protected Direction direction;
 
-    public Ship(String name, int width, int height, int hp) {
+    public Ship(String name, int width, int height) {
         this.name = name;
         this.width = width;
         this.height = height;
 
-        this.hp = hp;
-        this.maxHp = hp;
-
         direction = Direction.HORIZONTAL;
     }
 
-    public void takeDamage() {
-        hp--;
-    }
-
-    public boolean isSunk() {
-        return hp <= 0;
-    }
-
-    public int getHp() {
-        return hp;
-    }
+//    public boolean isSunk() {
+//
+//    }
 
     public void place(int row, int col) {
         this.row = row;
@@ -132,21 +119,21 @@ abstract class Ship {
 class Destroyer extends Ship {
 
     public Destroyer() {
-        super("Destroyer", 2, 1, 1);
+        super("Destroyer", 2, 1);
     }
 }
 
 class Battleship extends Ship {
 
     public Battleship() {
-        super("Battleship", 2, 2, 1);
+        super("Battleship", 2, 2);
     }
 }
 
 class Submarine extends Ship {
 
     public Submarine() {
-        super("Submarine", 3, 1, 1);
+        super("Submarine", 3, 1);
     }
 }
 
@@ -176,9 +163,9 @@ class Tile {
     public void attack() {
         attacked = true;
 
-        if(ship != null) {
-            ship.takeDamage();
-        }
+//        if(ship != null) {
+//            ship.takeDamage();
+//        }
     }
 
     public boolean isRecentlyAttacked() {
@@ -209,6 +196,23 @@ class Board {
                 grid[r][c] = new Tile();
             }
         }
+    }
+
+    public boolean isShipSunk(Ship ship) {
+
+        for(int r = 0; r < rows; r++) {
+
+            for(int c = 0; c < cols; c++) {
+
+                Tile tile = grid[r][c];
+
+                if(tile.getShip() == ship && !tile.isAttacked()) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     public Tile getTile(int row, int col) {
@@ -410,7 +414,7 @@ class Player {
 
         for(Ship ship : ships) {
 
-            if(!ship.isSunk()) {
+            if(!board.isShipSunk(ship)) {
                 return false;
             }
         }
@@ -422,6 +426,7 @@ class Player {
 class AIPlayer extends Player {
 
     private Random random;
+    private List<Ship> targetShips;
 
     private List<AttackMemory> memory;
     private Difficulty difficulty;
@@ -432,6 +437,7 @@ class AIPlayer extends Player {
         random = new Random();
 
         memory = new ArrayList<>();
+        targetShips = new ArrayList<>();
         currentTurn = 0;
     }
 
@@ -549,31 +555,127 @@ class AIPlayer extends Player {
         return false;
     }
 
+    private void discoverShip(Ship ship, Board board) {
+
+        if(difficulty == Difficulty.EASY)
+            return;
+
+        if(board.isShipSunk(ship))
+            return;
+
+        if(!targetShips.contains(ship)) {
+
+            targetShips.add(ship);
+
+            System.out.println("AI is now targeting your " + ship.getName() + "!");
+        }
+    }
+
+    private int[] getFocusedAttack(Player target) {
+
+        Board board = target.getBoard();
+
+        Iterator<Ship> iterator = targetShips.iterator();
+
+        while(iterator.hasNext()) {
+
+            Ship ship = iterator.next();
+
+            if(board.isShipSunk(ship)) {
+                iterator.remove();
+                continue;
+            }
+
+            for(int r = 0; r < 10; r++) {
+
+                for(int c = 0; c < 10; c++) {
+
+                    Tile tile = board.getTile(r, c);
+
+                    if(tile.getShip() == ship && tile.isAttacked()) {
+
+                        int[][] dirs = {
+                                {-1,0},
+                                {1,0},
+                                {0,-1},
+                                {0,1}
+                        };
+
+                        for(int[] d : dirs) {
+
+                            int nr = r + d[0];
+                            int nc = c + d[1];
+
+                            if(nr < 0 || nr >= 10 || nc < 0 || nc >= 10)
+                                continue;
+
+                            if(alreadyRemembered(nr, nc))
+                                continue;
+
+                            return new int[]{nr, nc};
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
     public void performTurn(Player target) {
-        target.getBoard().clearRecentAttacks();
 
         currentTurn++;
 
         processMemoryForget();
 
+        target.getBoard().clearRecentAttacks();
+
         int attacks = 0;
 
         while(attacks < 3) {
 
-            int row = random.nextInt(10);
-            int col = random.nextInt(10);
+            int row;
+            int col;
 
-            if(alreadyRemembered(row, col)) {
-                continue;
+            int[] focusedAttack = null;
+
+            if(difficulty != Difficulty.EASY) {
+                focusedAttack = getFocusedAttack(target);
+            }
+
+            // TARGET MODE
+            if(focusedAttack != null) {
+
+                row = focusedAttack[0];
+                col = focusedAttack[1];
+
+            }
+
+            // RANDOM MODE
+            else {
+
+                row = random.nextInt(10);
+                col = random.nextInt(10);
+
+                if(alreadyRemembered(row, col)) {
+                    continue;
+                }
             }
 
             Tile tile = target.getBoard().getTile(row, col);
 
-            tile.setRecentlyAttacked(true);
-
             target.getBoard().attackTile(row, col);
 
+            tile.setRecentlyAttacked(true);
+
             boolean hit = tile.hasShip();
+
+            if(hit) {
+
+                Ship ship = tile.getShip();
+
+                discoverShip(ship, target.getBoard());
+            }
 
             memory.add(new AttackMemory(row, col, hit, currentTurn));
 
@@ -585,7 +687,8 @@ class AIPlayer extends Player {
 
                 System.out.println("AI HIT your " + ship.getName() + "!");
 
-                if(ship.isSunk()) {
+                if(target.getBoard().isShipSunk(ship)) {
+
                     System.out.println("Your " + ship.getName() + " SUNK!");
                 }
 
@@ -802,7 +905,7 @@ class Game {
 
                 System.out.println("HIT on " + ship.getName() + "!");
 
-                if(ship.isSunk()) {
+                if(ai.getBoard().isShipSunk(ship)) {
                     System.out.println(ship.getName() + " SUNK!");
                 }
 
