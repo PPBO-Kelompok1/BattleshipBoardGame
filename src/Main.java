@@ -622,6 +622,163 @@ class AIPlayer extends Player {
         return null;
     }
 
+    private boolean isValidProbabilityTile(Tile tile) {
+        return !tile.isAttacked();
+    }
+
+    private int[][] generateHeatmap(Player target) {
+
+        int[][] heatmap = new int[10][10];
+        List<int[]> knownHits = getKnownHits(target);
+
+        Board board = target.getBoard();
+
+        // try every ship type
+        List<Ship> possibleShips = List.of(
+                new Destroyer(),
+                new Battleship(),
+                new Submarine()
+        );
+
+        for(Ship ship : possibleShips) {
+            for(Direction dir : Direction.values()) {
+
+                if(dir == Direction.VERTICAL) {
+                    ship.rotate();
+                }
+
+                // try every board pos
+                for(int row = 0; row < 10; row++) {
+
+                    for(int col = 0; col < 10; col++) {
+
+                        boolean valid = true;
+
+                        // check placement validity
+                        for(int r = 0; r < ship.getActualHeight(); r++) {
+
+                            for(int c = 0; c < ship.getActualWidth(); c++) {
+
+                                int nr = row + r;
+                                int nc = col + c;
+
+                                // out of zone/bounds
+                                if(nr >= 10 || nc >= 10) {
+                                    valid = false;
+                                    break;
+                                }
+
+                                Tile tile = board.getTile(nr, nc);
+
+                                // no place on missed attack
+                                if(tile.isAttacked() && !tile.hasShip()) {
+                                    valid = false;
+                                    break;
+                                }
+                            }
+
+                            if(!valid)
+                                break;
+                        }
+
+                        // valid tile/placement = add heat
+                        boolean coversHit = knownHits.isEmpty();
+
+                        for(int[] hit : knownHits) {
+
+                            int hr = hit[0];
+                            int hc = hit[1];
+
+                            boolean covered = false;
+
+                            for(int r = 0; r < ship.getActualHeight(); r++) {
+
+                                for(int c = 0; c < ship.getActualWidth(); c++) {
+
+                                    int nr = row + r;
+                                    int nc = col + c;
+
+                                    if(nr == hr && nc == hc) {
+
+                                        covered = true;
+                                        break;
+                                    }
+                                }
+
+                                if(covered)
+                                    break;
+                            }
+
+                            if(covered) {
+                                coversHit = true;
+                                break;
+                            }
+                        }
+
+                        if(valid && coversHit) {
+
+                            for(int r = 0; r < ship.getActualHeight(); r++) {
+
+                                for(int c = 0; c < ship.getActualWidth(); c++) {
+
+                                    int nr = row + r;
+                                    int nc = col + c;
+
+                                    if(!board.getTile(nr, nc).isAttacked()) {
+                                        heatmap[nr][nc]++;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // orientation restore
+                if(dir == Direction.VERTICAL) {
+                    ship.rotate();
+                }
+            }
+        }
+
+        return heatmap;
+    }
+
+    private int[] getBestProbabilityAttack(Player target) {
+
+        int[][] heatmap = generateHeatmap(target);
+
+        int bestScore = -1;
+
+        List<int[]> bestTiles = new ArrayList<>();
+
+        for(int r = 0; r < 10; r++) {
+
+            for(int c = 0; c < 10; c++) {
+
+                if(alreadyRemembered(r, c))
+                    continue;
+
+                int score = heatmap[r][c];
+
+                if(score > bestScore) {
+
+                    bestScore = score;
+
+                    bestTiles.clear();
+
+                    bestTiles.add(new int[]{r, c});
+                }
+
+                else if(score == bestScore) {
+
+                    bestTiles.add(new int[]{r, c});
+                }
+            }
+        }
+
+        return bestTiles.get(random.nextInt(bestTiles.size()));
+    }
+
     public void performTurn(Player target) {
 
         currentTurn++;
@@ -643,7 +800,7 @@ class AIPlayer extends Player {
                 focusedAttack = getFocusedAttack(target);
             }
 
-            // TARGET MODE
+            // target ship mode
             if(focusedAttack != null) {
 
                 row = focusedAttack[0];
@@ -651,14 +808,34 @@ class AIPlayer extends Player {
 
             }
 
-            // RANDOM MODE
+            // random/search mode
             else {
+                if(difficulty == Difficulty.EXTREME) {
 
-                row = random.nextInt(10);
-                col = random.nextInt(10);
+                    int[] move = getBestProbabilityAttack(target);
 
-                if(alreadyRemembered(row, col)) {
-                    continue;
+                    row = move[0];
+                    col = move[1];
+                }
+                else {
+                    if(difficulty != Difficulty.EASY) {
+                        focusedAttack = getFocusedAttack(target);
+                    }
+
+                    if(focusedAttack != null) {
+
+                        row = focusedAttack[0];
+                        col = focusedAttack[1];
+
+                    } else {
+
+                        row = random.nextInt(10);
+                        col = random.nextInt(10);
+
+                        if(alreadyRemembered(row, col)) {
+                            continue;
+                        }
+                    }
                 }
             }
 
@@ -699,6 +876,27 @@ class AIPlayer extends Player {
 
             attacks++;
         }
+    }
+    private List<int[]> getKnownHits(Player target) {
+
+        List<int[]> hits = new ArrayList<>();
+
+        Board board = target.getBoard();
+
+        for(int r = 0; r < 10; r++) {
+
+            for(int c = 0; c < 10; c++) {
+
+                Tile tile = board.getTile(r, c);
+
+                if(tile.isAttacked() && tile.hasShip()) {
+
+                    hits.add(new int[]{r, c});
+                }
+            }
+        }
+
+        return hits;
     }
 }
 
@@ -903,10 +1101,10 @@ class Game {
 
                 Ship ship = tile.getShip();
 
-                System.out.println("HIT on " + ship.getName() + "!");
+                System.out.println("HIT on an unknown SHIP!");
 
                 if(ai.getBoard().isShipSunk(ship)) {
-                    System.out.println(ship.getName() + " SUNK!");
+                    System.out.println("CONGRATS! SUNK on " + ship.getName());
                 }
 
             } else {
