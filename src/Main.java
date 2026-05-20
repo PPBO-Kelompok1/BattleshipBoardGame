@@ -685,7 +685,7 @@ class AIPlayer extends Player {
                                 int nc = col + c;
 
                                 // out of zone/bounds
-                                if(nr >= 10 || nc >= 10) {
+                                if(nr >= board.getRows() || nc >= board.getCols()){
                                     valid = false;
                                     break;
                                 }
