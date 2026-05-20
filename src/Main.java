@@ -1184,11 +1184,16 @@ class Game {
 
                 Ship ship = tile.getShip();
 
-                System.out.println("HIT on an unknown SHIP!");
-
                 if(ai.getBoard().isShipSunk(ship)) {
                     System.out.println("CONGRATS! SUNK on " + ship.getName());
+
+                    if(ai.allShipsSunk()) {
+
+                        System.out.println("\nPLAYER WINS!");
+                        break;
+                    }
                 }
+                else System.out.println("HIT on an unknown SHIP!");
 
             } else {
 
