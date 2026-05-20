@@ -198,6 +198,13 @@ class Board {
         }
     }
 
+    public int getRows(){
+        return rows;
+    }
+    public int getCols(){
+        return cols;
+    }
+
     public boolean isShipSunk(Ship ship) {
 
         for(int r = 0; r < rows; r++) {
@@ -483,8 +490,8 @@ class AIPlayer extends Player {
 
         while (!placed) {
 
-            int row = random.nextInt(10);
-            int col = random.nextInt(10);
+            int row = random.nextInt(board.getRows());
+            int col = random.nextInt(board.getCols());
 
             placed = board.placeShip(ship, row, col);
         }
@@ -602,9 +609,9 @@ class AIPlayer extends Player {
                 continue;
             }
 
-            for(int r = 0; r < 10; r++) {
+            for(int r = 0; r < board.getRows(); r++) {
 
-                for(int c = 0; c < 10; c++) {
+                for(int c = 0; c < board.getCols(); c++) {
 
                     Tile tile = board.getTile(r, c);
 
@@ -622,7 +629,7 @@ class AIPlayer extends Player {
                             int nr = r + d[0];
                             int nc = c + d[1];
 
-                            if(nr < 0 || nr >= 10 || nc < 0 || nc >= 10)
+                            if(nr >= board.getRows() || nc >= board.getCols())
                                 continue;
 
                             if(alreadyRemembered(nr, nc))
@@ -643,11 +650,10 @@ class AIPlayer extends Player {
     }
 
     private int[][] generateHeatmap(Player target) {
-
-        int[][] heatmap = new int[10][10];
-        List<HitCluster> clusters = getHitClusters(target);
-
         Board board = target.getBoard();
+
+        int[][] heatmap = new int[board.getRows()][board.getCols()];
+        List<HitCluster> clusters = getHitClusters(target);
 
         // try every ship type
         List<Ship> possibleShips = List.of(
@@ -664,9 +670,9 @@ class AIPlayer extends Player {
                 }
 
                 // try every board pos
-                for(int row = 0; row < 10; row++) {
+                for(int row = 0; row < board.getRows(); row++) {
 
-                    for(int col = 0; col < 10; col++) {
+                    for(int col = 0; col < board.getCols(); col++) {
 
                         boolean valid = true;
 
@@ -747,7 +753,7 @@ class AIPlayer extends Player {
 
                                     if(!board.getTile(nr, nc).isAttacked()) {
 
-                                        heatmap[nr][nc] += 1 + (clusterMatches * 15); // change to around *5 for less agggressive/fixated AI
+                                        heatmap[nr][nc] += 1 + (clusterMatches * 5); // change to around *15 for MORE agggressive/fixated AI
                                     }
                                 }
                             }
@@ -773,9 +779,9 @@ class AIPlayer extends Player {
 
         List<int[]> bestTiles = new ArrayList<>();
 
-        for(int r = 0; r < 10; r++) {
+        for(int r = 0; r < board.getRows(); r++) {
 
-            for(int c = 0; c < 10; c++) {
+            for(int c = 0; c < board.getCols(); c++) {
 
                 if(alreadyRemembered(r, c))
                     continue;
@@ -818,7 +824,8 @@ class AIPlayer extends Player {
 
             int[] focusedAttack = null;
 
-            if(difficulty != Difficulty.EASY) {
+            if(difficulty == Difficulty.MEDIUM || difficulty == Difficulty.HARD) {
+
                 focusedAttack = getFocusedAttack(target);
             }
 
@@ -851,8 +858,8 @@ class AIPlayer extends Player {
 
                     } else {
 
-                        row = random.nextInt(10);
-                        col = random.nextInt(10);
+                        row = random.nextInt(board.getRows());
+                        col = random.nextInt(board.getCols());
 
                         if(alreadyRemembered(row, col)) {
                             continue;
@@ -899,27 +906,6 @@ class AIPlayer extends Player {
             attacks++;
         }
     }
-    private List<int[]> getKnownHits(Player target) {
-
-        List<int[]> hits = new ArrayList<>();
-
-        Board board = target.getBoard();
-
-        for(int r = 0; r < 10; r++) {
-
-            for(int c = 0; c < 10; c++) {
-
-                Tile tile = board.getTile(r, c);
-
-                if(tile.isAttacked() && tile.hasShip()) {
-
-                    hits.add(new int[]{r, c});
-                }
-            }
-        }
-
-        return hits;
-    }
 
     private void floodFillCluster(
             Board board,
@@ -929,7 +915,7 @@ class AIPlayer extends Player {
             int col
     ) {
 
-        if(row < 0 || row >= 10 || col < 0 || col >= 10)
+        if(row < 0 || row >= board.getRows() || col < 0 || col >= board.getCols())
             return;
 
         if(visited[row][col])
@@ -967,13 +953,13 @@ class AIPlayer extends Player {
 
         List<HitCluster> clusters = new ArrayList<>();
 
-        boolean[][] visited = new boolean[10][10];
+        boolean[][] visited = new boolean[board.getRows()][board.getCols()];
 
         Board board = target.getBoard();
 
-        for(int r = 0; r < 10; r++) {
+        for(int r = 0; r < board.getRows(); r++) {
 
-            for(int c = 0; c < 10; c++) {
+            for(int c = 0; c < board.getCols(); c++) {
 
                 Tile tile = board.getTile(r, c);
 
@@ -1069,7 +1055,9 @@ class Game {
                 System.out.print("Direction (H/V): ");
                 String dir = scanner.next();
 
-                if (dir.equalsIgnoreCase("V")) {
+                ship.direction = Direction.HORIZONTAL;
+
+                if(dir.equalsIgnoreCase("V")) {
                     ship.rotate();
                 }
 
