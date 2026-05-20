@@ -422,6 +422,22 @@ class Player {
         return true;
     }
 }
+class HitCluster {
+
+    List<int[]> hits;
+
+    public HitCluster() {
+        hits = new ArrayList<>();
+    }
+
+    public void add(int row, int col) {
+        hits.add(new int[]{row, col});
+    }
+
+    public List<int[]> getHits() {
+        return hits;
+    }
+}
 
 class AIPlayer extends Player {
 
@@ -629,7 +645,7 @@ class AIPlayer extends Player {
     private int[][] generateHeatmap(Player target) {
 
         int[][] heatmap = new int[10][10];
-        List<int[]> knownHits = getKnownHits(target);
+        List<HitCluster> clusters = getHitClusters(target);
 
         Board board = target.getBoard();
 
@@ -682,40 +698,45 @@ class AIPlayer extends Player {
                         }
 
                         // valid tile/placement = add heat
-                        boolean coversHit = knownHits.isEmpty();
+                        int clusterMatches = 0;
 
-                        for(int[] hit : knownHits) {
+                        for(HitCluster cluster : clusters) {
 
-                            int hr = hit[0];
-                            int hc = hit[1];
+                            boolean clusterCovered = false;
 
-                            boolean covered = false;
+                            for(int[] hit : cluster.getHits()) {
 
-                            for(int r = 0; r < ship.getActualHeight(); r++) {
+                                int hr = hit[0];
+                                int hc = hit[1];
 
-                                for(int c = 0; c < ship.getActualWidth(); c++) {
+                                for(int r = 0; r < ship.getActualHeight(); r++) {
 
-                                    int nr = row + r;
-                                    int nc = col + c;
+                                    for(int c = 0; c < ship.getActualWidth(); c++) {
 
-                                    if(nr == hr && nc == hc) {
+                                        int nr = row + r;
+                                        int nc = col + c;
 
-                                        covered = true;
-                                        break;
+                                        if(nr == hr && nc == hc) {
+
+                                            clusterCovered = true;
+                                            break;
+                                        }
                                     }
+
+                                    if(clusterCovered)
+                                        break;
                                 }
 
-                                if(covered)
+                                if(clusterCovered)
                                     break;
                             }
 
-                            if(covered) {
-                                coversHit = true;
-                                break;
+                            if(clusterCovered) {
+                                clusterMatches++;
                             }
                         }
 
-                        if(valid && coversHit) {
+                        if(valid) {
 
                             for(int r = 0; r < ship.getActualHeight(); r++) {
 
@@ -725,7 +746,8 @@ class AIPlayer extends Player {
                                     int nc = col + c;
 
                                     if(!board.getTile(nr, nc).isAttacked()) {
-                                        heatmap[nr][nc]++;
+
+                                        heatmap[nr][nc] += 1 + (clusterMatches * 15); // change to around *5 for less agggressive/fixated AI
                                     }
                                 }
                             }
@@ -897,6 +919,79 @@ class AIPlayer extends Player {
         }
 
         return hits;
+    }
+
+    private void floodFillCluster(
+            Board board,
+            boolean[][] visited,
+            HitCluster cluster,
+            int row,
+            int col
+    ) {
+
+        if(row < 0 || row >= 10 || col < 0 || col >= 10)
+            return;
+
+        if(visited[row][col])
+            return;
+
+        Tile tile = board.getTile(row, col);
+
+        if(!(tile.isAttacked() && tile.hasShip()))
+            return;
+
+        visited[row][col] = true;
+
+        cluster.add(row, col);
+
+        int[][] dirs = {
+                {-1,0},
+                {1,0},
+                {0,-1},
+                {0,1}
+        };
+
+        for(int[] d : dirs) {
+
+            floodFillCluster(
+                    board,
+                    visited,
+                    cluster,
+                    row + d[0],
+                    col + d[1]
+            );
+        }
+    }
+
+    private List<HitCluster> getHitClusters(Player target) {
+
+        List<HitCluster> clusters = new ArrayList<>();
+
+        boolean[][] visited = new boolean[10][10];
+
+        Board board = target.getBoard();
+
+        for(int r = 0; r < 10; r++) {
+
+            for(int c = 0; c < 10; c++) {
+
+                Tile tile = board.getTile(r, c);
+
+                if(visited[r][c])
+                    continue;
+
+                if(!(tile.isAttacked() && tile.hasShip()))
+                    continue;
+
+                HitCluster cluster = new HitCluster();
+
+                floodFillCluster(board, visited, cluster, r, c);
+
+                clusters.add(cluster);
+            }
+        }
+
+        return clusters;
     }
 }
 
