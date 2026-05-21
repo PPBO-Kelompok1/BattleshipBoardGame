@@ -1,5 +1,15 @@
 import java.util.*;
 import java.util.regex.*;
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.GridLayout;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 
 enum Direction {
     HORIZONTAL,
@@ -498,7 +508,6 @@ class AIPlayer extends Player {
 
         addShip(ship);
 
-        System.out.println("AI placed " + ship.getName());
     }
     public void processMemoryForget() {
 
@@ -590,7 +599,6 @@ class AIPlayer extends Player {
 
             targetShips.add(ship);
 
-            System.out.println("AI is now targeting your " + ship.getName() + "!");
         }
     }
 
@@ -629,7 +637,7 @@ class AIPlayer extends Player {
                             int nr = r + d[0];
                             int nc = c + d[1];
 
-                            if(nr >= board.getRows() || nc >= board.getCols())
+                            if(nr < 0 || nc < 0 || nr >= board.getRows() || nc >= board.getCols())
                                 continue;
 
                             if(alreadyRemembered(nr, nc))
@@ -885,22 +893,14 @@ class AIPlayer extends Player {
 
             memory.add(new AttackMemory(row, col, hit, currentTurn));
 
-            System.out.println("\nAI attacked (" + row + ", " + col + ")");
-
             if(hit) {
 
                 Ship ship = tile.getShip();
 
-                System.out.println("AI HIT your " + ship.getName() + "!");
-
                 if(target.getBoard().isShipSunk(ship)) {
-
-                    System.out.println("Your " + ship.getName() + " SUNK!");
                 }
 
             } else {
-
-                System.out.println("AI MISSED!");
             }
 
             attacks++;
@@ -981,226 +981,497 @@ class AIPlayer extends Player {
     }
 }
 
-class Game {
+class Game extends JFrame {
 
-    private Player player;
-    private AIPlayer ai;
+    private static final int BOARD_SIZE = 10;
+    private static final int SHIP_COUNT = 3;
+    private static final int ATTACKS_PER_TURN = 3;
 
-    private Scanner scanner;
+    private final Player player;
+    private final AIPlayer ai;
+    private final BoardPanel playerBoardPanel;
+    private final BoardPanel enemyBoardPanel;
+    private final JComboBox<Difficulty> difficultyBox;
+    private final JComboBox<String> shipBox;
+    private final JComboBox<Direction> directionBox;
+    private final JLabel statusLabel;
+    private final JLabel turnLabel;
+    private final JLabel setupLabel;
 
-    private final int SHIP_COUNT = 3;
+    private int placedShips;
+    private int attacksLeft;
+    private boolean gameStarted;
+    private boolean playerTurn;
 
     public Game() {
+        super("Battleship Swing");
 
-        player = new Player(10, 10);
-        ai = new AIPlayer(10, 10);
+        player = new Player(BOARD_SIZE, BOARD_SIZE);
+        ai = new AIPlayer(BOARD_SIZE, BOARD_SIZE);
 
-        scanner = new Scanner(System.in);
-    }
+        difficultyBox = new JComboBox<>(Difficulty.values());
+        shipBox = new JComboBox<>(new String[]{
+                "Destroyer (2x1)",
+                "Battleship (2x2)",
+                "Submarine (3x1)"
+        });
+        directionBox = new JComboBox<>(Direction.values());
+        statusLabel = new JLabel("Choose difficulty, then place 3 ships on your board.");
+        turnLabel = new JLabel("Setup");
+        setupLabel = new JLabel("Ships placed: 0 / " + SHIP_COUNT);
 
-    private Difficulty chooseDifficulty() {
+        playerBoardPanel = new BoardPanel(player.getBoard(), true);
+        enemyBoardPanel = new BoardPanel(ai.getBoard(), false);
 
-        while(true) {
+        difficultyBox.setRenderer(new FriendlyEnumRenderer<>());
+        directionBox.setRenderer(new FriendlyEnumRenderer<>());
 
-            System.out.println("""
-                Choose Difficulty:
-                1. Easy
-                2. Medium
-                3. Hard
-                4. Extreme
-                """);
-
-            int choice = scanner.nextInt();
-
-            switch(choice) {
-
-                case 1:
-                    return Difficulty.EASY;
-
-                case 2:
-                    return Difficulty.MEDIUM;
-
-                case 3:
-                    return Difficulty.HARD;
-
-                case 4:
-                    return Difficulty.EXTREME;
-
-                default:
-                    System.out.println("Invalid choice!");
-            }
-        }
+        buildUi();
+        refreshBoards();
     }
 
     public void start() {
+        setVisible(true);
+    }
 
-        System.out.println(Colors.parse("{FF0000}=== PLAYER SETUP ==="));
+    private void buildUi() {
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setMinimumSize(new Dimension(980, 680));
+        setLocationRelativeTo(null);
 
-        for (int i = 0; i < SHIP_COUNT; i++) {
+        JPanel root = new JPanel(new BorderLayout(16, 16));
+        root.setBorder(new EmptyBorder(16, 16, 16, 16));
+        root.setBackground(new Color(12, 28, 43));
+        setContentPane(root);
 
-            Ship ship = chooseShip();
+        JPanel top = new JPanel(new BorderLayout(12, 12));
+        top.setOpaque(false);
 
-            boolean placed = false;
+        JPanel controls = new JPanel();
+        controls.setOpaque(false);
+        controls.add(controlLabel("Difficulty"));
+        controls.add(difficultyBox);
+        controls.add(controlLabel("Ship"));
+        controls.add(shipBox);
+        controls.add(controlLabel("Direction"));
+        controls.add(directionBox);
 
-            while (!placed) {
+        JButton rotateButton = new JButton("Rotate");
+        rotateButton.addActionListener(e -> toggleDirection());
+        controls.add(rotateButton);
 
-                System.out.println("Place your " + ship.getName());
+        JButton restartButton = new JButton("New Game");
+        restartButton.addActionListener(e -> restart());
+        controls.add(restartButton);
 
-                System.out.print("Row: ");
-                int row = scanner.nextInt();
+        styleHeaderLabel(statusLabel, 16);
+        styleHeaderLabel(turnLabel, 18);
+        styleHeaderLabel(setupLabel, 14);
 
-                System.out.print("Col: ");
-                int col = scanner.nextInt();
+        JPanel labels = new JPanel(new GridLayout(3, 1, 2, 2));
+        labels.setOpaque(false);
+        labels.add(turnLabel);
+        labels.add(statusLabel);
+        labels.add(setupLabel);
 
-                System.out.print("Direction (H/V): ");
-                String dir = scanner.next();
+        top.add(controls, BorderLayout.NORTH);
+        top.add(labels, BorderLayout.CENTER);
+        root.add(top, BorderLayout.NORTH);
 
-                ship.direction = Direction.HORIZONTAL;
+        JPanel boards = new JPanel(new GridLayout(1, 2, 18, 0));
+        boards.setOpaque(false);
+        boards.add(wrapBoard("Player Board", playerBoardPanel));
+        boards.add(wrapBoard("AI Board", enemyBoardPanel));
+        root.add(boards, BorderLayout.CENTER);
 
-                if(dir.equalsIgnoreCase("V")) {
-                    ship.rotate();
-                }
+        pack();
+    }
 
-                placed = player.getBoard().placeShip(ship, row, col);
+    private JPanel wrapBoard(String title, BoardPanel panel) {
+        JLabel label = new JLabel(title, SwingConstants.CENTER);
+        styleHeaderLabel(label, 18);
 
-                if (!placed) {
-                    System.out.println("Invalid position!");
-                }
-            }
+        JPanel wrapper = new JPanel(new BorderLayout(0, 10));
+        wrapper.setOpaque(false);
+        wrapper.add(label, BorderLayout.NORTH);
+        wrapper.add(panel, BorderLayout.CENTER);
+        return wrapper;
+    }
 
-            player.addShip(ship);
+    private void styleHeaderLabel(JLabel label, int size) {
+        label.setForeground(Color.WHITE);
+        label.setFont(label.getFont().deriveFont(Font.BOLD, size));
+    }
 
-            player.getBoard().displayPlayerBoard();
+    private JLabel controlLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setForeground(Color.WHITE);
+        return label;
+    }
+
+    private void toggleDirection() {
+        Direction selected = (Direction) directionBox.getSelectedItem();
+        directionBox.setSelectedItem(selected == Direction.HORIZONTAL ? Direction.VERTICAL : Direction.HORIZONTAL);
+    }
+
+    private void restart() {
+        dispose();
+        SwingUtilities.invokeLater(() -> new Game().start());
+    }
+
+    private void handlePlayerBoardClick(int row, int col) {
+        if (gameStarted) {
+            return;
         }
 
-        System.out.println("\n=== AI SETUP ===");
+        Ship ship = createSelectedShip();
+        ship.direction = (Direction) directionBox.getSelectedItem();
+
+        if (!player.getBoard().placeShip(ship, row, col)) {
+            statusLabel.setText("Invalid placement. Ships cannot overlap or leave the board.");
+            return;
+        }
+
+        player.addShip(ship);
+        placedShips++;
+        setupLabel.setText("Ships placed: " + placedShips + " / " + SHIP_COUNT);
+        statusLabel.setText(ship.getName() + " placed. Choose the next ship and tile.");
+
+        if (placedShips == SHIP_COUNT) {
+            finishSetup();
+        }
+
+        refreshBoards();
+    }
+
+    private void finishSetup() {
+        difficultyBox.setEnabled(false);
+        shipBox.setEnabled(false);
+        directionBox.setEnabled(false);
+        ai.setDifficulty((Difficulty) difficultyBox.getSelectedItem());
+        placeAiShips();
+        gameStarted = true;
+        playerTurn = true;
+        attacksLeft = ATTACKS_PER_TURN;
+        turnLabel.setText("Player Turn");
+        setupLabel.setText("Attack the concealed AI board.");
+        statusLabel.setText("Game start. You have " + attacksLeft + " attacks.");
+    }
+
+    private void placeAiShips() {
+        Random random = new Random();
 
         for (int i = 0; i < SHIP_COUNT; i++) {
-
             Ship ship = ai.randomShip();
 
-            Random rand = new Random();
-            boolean randomValue = rand.nextBoolean();
-
-            if(!randomValue) {
+            if (random.nextBoolean()) {
                 ship.rotate();
             }
 
             ai.placeShipRandomly(ship);
         }
+    }
 
-        System.out.println("\nPLAYER BOARD:");
-        player.getBoard().displayPlayerBoard();
+    private Ship createSelectedShip() {
+        int selected = shipBox.getSelectedIndex();
 
-        Difficulty diff = chooseDifficulty();
+        return switch (selected) {
+            case 1 -> new Battleship();
+            case 2 -> new Submarine();
+            default -> new Destroyer();
+        };
+    }
 
-        ai.setDifficulty(diff);
+    private void handleEnemyBoardClick(int row, int col) {
+        if (!gameStarted || !playerTurn) {
+            return;
+        }
 
-        System.out.println("\n=== GAME START ===");
+        Tile tile = ai.getBoard().getTile(row, col);
 
-        while(true) {
+        if (tile.isAttacked()) {
+            statusLabel.setText("That tile was already attacked. Pick another target.");
+            return;
+        }
 
-            playerTurn();
+        ai.getBoard().attackTile(row, col);
+        attacksLeft--;
 
-            if(ai.allShipsSunk()) {
+        if (tile.hasShip()) {
+            Ship ship = tile.getShip();
 
-                System.out.println("\nPLAYER WINS!");
-                break;
+            if (ai.getBoard().isShipSunk(ship)) {
+                statusLabel.setText("Red explosion. You sunk an enemy " + ship.getName() + "!");
+            } else {
+                statusLabel.setText("Red explosion. Hit on an enemy ship.");
             }
+        } else {
+            statusLabel.setText("Miss. " + attacksLeft + " attacks left.");
+        }
 
+        refreshBoards();
+
+        if (ai.allShipsSunk()) {
+            endGame("Player wins. All AI ships are sunk.");
+            return;
+        }
+
+        if (attacksLeft == 0) {
+            startAiTurn();
+        } else {
+            turnLabel.setText("Player Turn - " + attacksLeft + " attacks left");
+        }
+    }
+
+    private void startAiTurn() {
+        playerTurn = false;
+        turnLabel.setText("AI Turn");
+        statusLabel.setText("AI is targeting your board...");
+
+        javax.swing.Timer timer = new javax.swing.Timer(650, e -> {
+            ((javax.swing.Timer) e.getSource()).stop();
             ai.performTurn(player);
-
-            if(player.allShipsSunk()) {
-
-                System.out.println("\nAI WINS!");
-                break;
-            }
-
-            System.out.println("\n=== PLAYER BOARD ===");
-
-            player.getBoard().displayPlayerBoard();
-        }
+            showAiAttackResult();
+        });
+        timer.setRepeats(false);
+        timer.start();
     }
 
-    private Ship chooseShip() {
+    private void showAiAttackResult() {
+        int hits = 0;
+        int misses = 0;
 
-        while (true) {
+        for (int r = 0; r < BOARD_SIZE; r++) {
+            for (int c = 0; c < BOARD_SIZE; c++) {
+                Tile tile = player.getBoard().getTile(r, c);
 
-            System.out.println("""
-                    Choose Ship:
-                    1. Destroyer (2x1)
-                    2. Battleship (2x2)
-                    3. Submarine (3x1)
-                    """);
-
-            int choice = scanner.nextInt();
-
-            switch(choice) {
-
-                case 1:
-                    return new Destroyer();
-
-                case 2:
-                    return new Battleship();
-
-                case 3:
-                    return new Submarine();
-
-                default:
-                    System.out.println("Invalid choice!");
-            }
-        }
-    }
-
-    private void playerTurn() {
-
-        System.out.println("\n=== PLAYER TURN ===");
-
-        int attacks = 0;
-
-        while(attacks < 3) {
-
-            System.out.println("\nAI BOARD:");
-
-            ai.getBoard().displayHidden();
-
-            System.out.print("Attack Row: ");
-            int row = scanner.nextInt();
-
-            System.out.print("Attack Col: ");
-            int col = scanner.nextInt();
-
-            Tile tile = ai.getBoard().getTile(row, col);
-
-            if(tile.isAttacked()) {
-
-                System.out.println("Tile already attacked!");
-                continue;
-            }
-
-            ai.getBoard().attackTile(row, col);
-
-            if(tile.hasShip()) {
-
-                Ship ship = tile.getShip();
-
-                if(ai.getBoard().isShipSunk(ship)) {
-                    System.out.println("CONGRATS! SUNK on " + ship.getName());
-
-                    if(ai.allShipsSunk()) {
-
-                        System.out.println("\nPLAYER WINS!");
-                        break;
+                if (tile.isRecentlyAttacked()) {
+                    if (tile.hasShip()) {
+                        hits++;
+                    } else {
+                        misses++;
                     }
                 }
-                else System.out.println("HIT on an unknown SHIP!");
+            }
+        }
 
-            } else {
+        refreshBoards();
 
-                System.out.println("MISS!");
+        if (player.allShipsSunk()) {
+            endGame("AI wins. Your fleet is sunk.");
+            return;
+        }
+
+        statusLabel.setText("AI attack flashes: " + hits + " hit, " + misses + " miss.");
+
+        javax.swing.Timer timer = new javax.swing.Timer(900, e -> {
+            ((javax.swing.Timer) e.getSource()).stop();
+            player.getBoard().clearRecentAttacks();
+            attacksLeft = ATTACKS_PER_TURN;
+            playerTurn = true;
+            turnLabel.setText("Player Turn - " + attacksLeft + " attacks left");
+            statusLabel.setText("Your turn. Attack the AI board.");
+            refreshBoards();
+        });
+        timer.setRepeats(false);
+        timer.start();
+    }
+
+    private void endGame(String message) {
+        gameStarted = false;
+        playerTurn = false;
+        turnLabel.setText("Game Over");
+        statusLabel.setText(message);
+        refreshBoards();
+    }
+
+    private void refreshBoards() {
+        playerBoardPanel.refresh();
+        enemyBoardPanel.refresh();
+    }
+
+    private class BoardPanel extends JPanel {
+
+        private final Board board;
+        private final boolean playerBoard;
+        private final TileButton[][] buttons;
+
+        BoardPanel(Board board, boolean playerBoard) {
+            super(new GridLayout(BOARD_SIZE, BOARD_SIZE, 2, 2));
+            this.board = board;
+            this.playerBoard = playerBoard;
+            buttons = new TileButton[BOARD_SIZE][BOARD_SIZE];
+
+            setBackground(new Color(7, 18, 30));
+            setBorder(new EmptyBorder(8, 8, 8, 8));
+
+            for (int r = 0; r < BOARD_SIZE; r++) {
+                for (int c = 0; c < BOARD_SIZE; c++) {
+                    TileButton button = new TileButton(r, c);
+                    buttons[r][c] = button;
+                    add(button);
+                }
+            }
+        }
+
+        void refresh() {
+            for (int r = 0; r < BOARD_SIZE; r++) {
+                for (int c = 0; c < BOARD_SIZE; c++) {
+                    styleButton(buttons[r][c], false);
+                }
+            }
+        }
+
+        private void showPlacementHover(int row, int col, boolean show) {
+            if (!playerBoard || gameStarted) {
+                return;
             }
 
-            attacks++;
+            refresh();
+
+            if (!show) {
+                return;
+            }
+
+            Ship ship = createSelectedShip();
+            ship.direction = (Direction) directionBox.getSelectedItem();
+            boolean valid = board.canPlaceShip(ship, row, col);
+
+            for (int r = 0; r < ship.getActualHeight(); r++) {
+                for (int c = 0; c < ship.getActualWidth(); c++) {
+                    int nr = row + r;
+                    int nc = col + c;
+
+                    if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE) {
+                        buttons[nr][nc].setBackground(valid ? new Color(73, 187, 119) : new Color(184, 50, 59));
+                    }
+                }
+            }
+        }
+
+        private void showTargetHover(TileButton button, boolean show) {
+            if (playerBoard || !gameStarted || !playerTurn) {
+                return;
+            }
+
+            styleButton(button, show && !board.getTile(button.row, button.col).isAttacked());
+        }
+
+        private void styleButton(TileButton button, boolean hoverTarget) {
+            Tile tile = board.getTile(button.row, button.col);
+            button.setText("");
+            button.setForeground(Color.WHITE);
+
+            if (tile.isRecentlyAttacked()) {
+                button.setBackground(new Color(255, 194, 41));
+                button.setText(tile.hasShip() ? "X" : "O");
+                return;
+            }
+
+            if (tile.isAttacked() && tile.hasShip()) {
+                button.setBackground(new Color(202, 35, 45));
+                button.setText("X");
+                return;
+            }
+
+            if (tile.isAttacked()) {
+                button.setBackground(new Color(194, 232, 240));
+                button.setForeground(new Color(23, 55, 73));
+                button.setText("O");
+                return;
+            }
+
+            if (playerBoard && tile.hasShip()) {
+                button.setBackground(new Color(91, 106, 117));
+                button.setText(shipCode(tile.getShip()));
+                return;
+            }
+
+            button.setBackground(hoverTarget ? new Color(84, 181, 219) : new Color(20, 117, 171));
+        }
+
+        private String shipCode(Ship ship) {
+            if (ship instanceof Battleship) {
+                return "B";
+            }
+
+            if (ship instanceof Submarine) {
+                return "S";
+            }
+
+            if (ship instanceof Destroyer) {
+                return "D";
+            }
+
+            return "?";
+        }
+
+        private class TileButton extends JButton {
+
+            private final int row;
+            private final int col;
+
+            TileButton(int row, int col) {
+                this.row = row;
+                this.col = col;
+
+                setPreferredSize(new Dimension(42, 42));
+                setFocusPainted(false);
+                setBorderPainted(false);
+                setOpaque(true);
+                setFont(getFont().deriveFont(Font.BOLD, 16f));
+                setToolTipText(row + ", " + col);
+                setAlignmentX(Component.CENTER_ALIGNMENT);
+
+                addActionListener(e -> {
+                    if (playerBoard) {
+                        handlePlayerBoardClick(row, col);
+                    } else {
+                        handleEnemyBoardClick(row, col);
+                    }
+                });
+
+                addMouseListener(new MouseAdapter() {
+                    @Override
+                    public void mouseEntered(MouseEvent e) {
+                        if (playerBoard) {
+                            showPlacementHover(row, col, true);
+                        } else {
+                            showTargetHover(TileButton.this, true);
+                        }
+                    }
+
+                    @Override
+                    public void mouseExited(MouseEvent e) {
+                        if (playerBoard) {
+                            showPlacementHover(row, col, false);
+                        } else {
+                            showTargetHover(TileButton.this, false);
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    private static class FriendlyEnumRenderer<T extends Enum<T>> extends DefaultListCellRenderer {
+
+        @Override
+        public Component getListCellRendererComponent(
+                JList<?> list,
+                Object value,
+                int index,
+                boolean isSelected,
+                boolean cellHasFocus
+        ) {
+            super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+
+            if (value instanceof Enum<?> enumValue) {
+                String text = enumValue.name().toLowerCase(Locale.ROOT).replace('_', ' ');
+                setText(Character.toUpperCase(text.charAt(0)) + text.substring(1));
+            }
+
+            return this;
         }
     }
 }
@@ -1209,8 +1480,6 @@ public class Main {
 
     public static void main(String[] args) {
 
-        Game game = new Game();
-
-        game.start();
+        SwingUtilities.invokeLater(() -> new Game().start());
     }
 }
