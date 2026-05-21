@@ -1002,6 +1002,7 @@ class Game extends JFrame {
     private int attacksLeft;
     private boolean gameStarted;
     private boolean playerTurn;
+    private boolean revealEnemyShips;
 
     public Game() {
         super("Battleship Swing");
@@ -1258,6 +1259,7 @@ class Game extends JFrame {
         refreshBoards();
 
         if (player.allShipsSunk()) {
+            revealEnemyShips = true;
             endGame("AI wins. Your fleet is sunk.");
             return;
         }
@@ -1381,7 +1383,7 @@ class Game extends JFrame {
                 return;
             }
 
-            if (playerBoard && tile.hasShip()) {
+            if ((playerBoard || revealEnemyShips) && tile.hasShip()) {
                 button.setBackground(new Color(91, 106, 117));
                 button.setText(shipCode(tile.getShip()));
                 return;
