@@ -23,6 +23,10 @@ enum Difficulty {
     EXTREME
 }
 
+interface Displayable {
+    String getSymbol();
+}
+
 final class Colors {
 
     public static String parse(String text) {
@@ -63,7 +67,7 @@ final class Colors {
     }
 }
 
-abstract class Ship {
+abstract class Ship implements Displayable{
 
     protected String name;
     protected int width;
@@ -131,6 +135,11 @@ class Destroyer extends Ship {
     public Destroyer() {
         super("Destroyer", 2, 1);
     }
+
+    @Override
+    public String getSymbol() {
+        return "D";
+    }
 }
 
 class Battleship extends Ship {
@@ -138,12 +147,22 @@ class Battleship extends Ship {
     public Battleship() {
         super("Battleship", 2, 2);
     }
+
+    @Override
+    public String getSymbol() {
+        return "B";
+    }
 }
 
 class Submarine extends Ship {
 
     public Submarine() {
         super("Submarine", 3, 1);
+    }
+
+    @Override
+    public String getSymbol() {
+        return "S";
     }
 }
 
