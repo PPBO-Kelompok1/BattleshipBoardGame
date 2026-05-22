@@ -1079,6 +1079,10 @@ class Game extends JFrame implements GameCallback{
     private final JComboBox<Difficulty> difficultyBox;
     private final JComboBox<String> shipBox;
     private final JComboBox<Direction> directionBox;
+
+    // Atribut Swing tambahan: difficulty, box dan direction, dan skill
+    private final JComboBox<String> skillShipBox;
+
     private final JLabel statusLabel;
     private final JLabel turnLabel;
     private final JLabel setupLabel;
@@ -1116,6 +1120,9 @@ class Game extends JFrame implements GameCallback{
         difficultyBox.setRenderer(new FriendlyEnumRenderer<>());
         directionBox.setRenderer(new FriendlyEnumRenderer<>());
 
+        // Objek Swing: combo box skill
+        skillShipBox = new JComboBox<>();
+
         buildUi();
         refreshBoards();
     }
@@ -1143,6 +1150,18 @@ class Game extends JFrame implements GameCallback{
         setMinimumSize(new Dimension(980, 680));
         setLocationRelativeTo(null);
 
+        // Atribut/Objek Swing tambahan: skill selector
+        JButton skillButton = new JButton("Use Skill");
+
+        // UI tambahan: tombol skill
+        skillButton.addActionListener(e -> {
+            if (!gameStarted || !playerTurn) return;
+            int idx = skillShipBox.getSelectedIndex();
+            if (idx < 0 || idx >= player.ships.size()) return;
+            Ship ship = player.ships.get(idx);
+            ship.useSkill(ai.getBoard(), this);
+        });
+
         JPanel root = new JPanel(new BorderLayout(16, 16));
         root.setBorder(new EmptyBorder(16, 16, 16, 16));
         root.setBackground(new Color(12, 28, 43));
@@ -1159,6 +1178,11 @@ class Game extends JFrame implements GameCallback{
         controls.add(shipBox);
         controls.add(controlLabel("Direction"));
         controls.add(directionBox);
+
+        // Method tambahan: skill selector
+        controls.add(controlLabel("Skill"));
+        controls.add(skillShipBox);
+        controls.add(skillButton);
 
         JButton rotateButton = new JButton("Rotate");
         rotateButton.addActionListener(e -> toggleDirection());
@@ -1260,6 +1284,10 @@ class Game extends JFrame implements GameCallback{
         turnLabel.setText("Player Turn");
         setupLabel.setText("Attack the concealed AI board.");
         statusLabel.setText("Game start. You have " + attacksLeft + " attacks.");
+
+        for (Ship ship : player.ships) {
+            skillShipBox.addItem(ship.getName());
+        }
     }
 
     private void placeAiShips() {
