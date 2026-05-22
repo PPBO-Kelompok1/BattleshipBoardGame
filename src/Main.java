@@ -160,23 +160,74 @@ abstract class Ship {
 }
 
 class Destroyer extends Ship {
+    public Destroyer() { super("Destroyer", 2, 1, 1); }
 
-    public Destroyer() {
-        super("Destroyer", 2, 1);
+    @Override
+    public void useSkill(Board enemyBoard, GameCallback callback) {
+        if (skillUsed) { callback.showMessage("Skill already used!"); return; }
+        skillUsed = true;
+        doStrike(enemyBoard, callback, 1);
+    }
+
+    private void doStrike(Board enemyBoard, GameCallback callback, int strikeNum) {
+        if (strikeNum > 2) return;
+        callback.requestCoordinates("Double Strike #" + strikeNum + " — pick a tile", (row, col) -> {
+            Tile tile = enemyBoard.getTile(row, col);
+            if (tile.isAttacked()) {
+                callback.showMessage("Already attacked! Pick again.");
+                doStrike(enemyBoard, callback, strikeNum); // retry
+                return;
+            }
+            enemyBoard.attackTile(row, col);
+            String result = tile.hasShip()
+                    ? (enemyBoard.isShipSunk(tile.getShip()) ? tile.getShip().getName() + " SUNK!" : "HIT!")
+                    : "Miss.";
+            callback.showMessage("Strike #" + strikeNum + ": " + result);
+            doStrike(enemyBoard, callback, strikeNum + 1);
+        });
     }
 }
 
 class Battleship extends Ship {
+    public Battleship() { super("Battleship", 2, 2, 1); }
 
-    public Battleship() {
-        super("Battleship", 2, 2);
+    @Override
+    public void useSkill(Board enemyBoard, GameCallback callback) {
+        if (skillUsed) { callback.showMessage("Skill already used!"); return; }
+        callback.requestCoordinates("Area Bombardment — pick top-left of 2×2", (row, col) -> {
+            skillUsed = true;
+            StringBuilder log = new StringBuilder("Bombardment results:<br>");
+            for (int r = row; r < row + 2; r++) {
+                for (int c = col; c < col + 2; c++) {
+                    try {
+                        Tile tile = enemyBoard.getTile(r, c);
+                        if (tile.isAttacked()) continue;
+                        enemyBoard.attackTile(r, c);
+                        log.append(tile.hasShip() ? "Hit" : "Miss")
+                                .append(" at (").append(r).append(",").append(c).append(")<br>");
+                    } catch (Exception ignored) {}
+                }
+            }
+            callback.showMessage(log.toString());
+        });
     }
 }
 
 class Submarine extends Ship {
+    public Submarine() { super("Submarine", 3, 1, 1); }
 
-    public Submarine() {
-        super("Submarine", 3, 1);
+    @Override
+    public void useSkill(Board enemyBoard, GameCallback callback) {
+        if (skillUsed) { callback.showMessage("Skill already used!"); return; }
+        callback.requestCoordinates("Sonar Scan — pick top-left of 2×2 area", (row, col) -> {
+            skillUsed = true;
+            boolean detected = false;
+            for (int r = row; r < row + 2 && !detected; r++)
+                for (int c = col; c < col + 2 && !detected; c++)
+                    try { if (enemyBoard.getTile(r, c).hasShip()) detected = true; }
+                    catch (Exception ignored) {}
+            callback.showMessage(detected ? "Sonar: SHIP DETECTED nearby!" : "Sonar: All clear.");
+        });
     }
 }
 
