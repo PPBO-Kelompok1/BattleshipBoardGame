@@ -1065,7 +1065,8 @@ class AIPlayer extends Player {
     }
 }
 
-class Game extends JFrame {
+// Game: implementasi interface untuk gameplay
+class Game extends JFrame implements GameCallback{
 
     private static final int BOARD_SIZE = 10;
     private static final int SHIP_COUNT = 3;
@@ -1087,6 +1088,10 @@ class Game extends JFrame {
     private boolean gameStarted;
     private boolean playerTurn;
     private boolean revealEnemyShips;
+
+    // Atribut tambahan: menyesuaikan dengan implementasi interface gameplay
+    private boolean awaitingSkillInput = false;
+    private CoordConsumer pendingCoordConsumer = null;
 
     public Game() {
         super("Battleship Swing");
@@ -1114,6 +1119,20 @@ class Game extends JFrame {
         buildUi();
         refreshBoards();
     }
+
+    // Method tambahan: Override dari interface
+    @Override
+    public void requestCoordinates(String prompt, CoordConsumer consumer) {
+        awaitingSkillInput = true;
+        pendingCoordConsumer = consumer;
+        statusLabel.setText(prompt + " — click a tile on the AI board.");
+    }
+
+    @Override
+    public void showMessage(String message) {
+        statusLabel.setText("<html>" + message + "</html>");
+    }
+    // Akhir method tambahan
 
     public void start() {
         setVisible(true);
