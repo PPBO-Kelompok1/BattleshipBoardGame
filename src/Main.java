@@ -23,6 +23,15 @@ enum Difficulty {
     EXTREME
 }
 
+interface GameCallback {
+    void requestCoordinates(String prompt, CoordConsumer consumer);
+    void showMessage(String message);
+}
+
+interface CoordConsumer {
+    void accept(int row, int col);
+}
+
 final class Colors {
 
     public static String parse(String text) {
