@@ -73,12 +73,22 @@ abstract class Ship {
     protected int col;
     protected Direction direction;
 
-    public Ship(String name, int width, int height) {
+    // Atribut tambahan: untuk merge ke visualisasi prototype
+    protected int hp;
+    protected int maxHp;
+    protected boolean skillUsed;
+
+    public Ship(String name, int width, int height, int hp) {
         this.name = name;
         this.width = width;
         this.height = height;
 
         direction = Direction.HORIZONTAL;
+
+        // Atribut constructor tambahan: untuk merge ke visualisasi prototype
+        this.hp = hp;
+        this.maxHp = hp;
+        this.skillUsed = false;
     }
 
 //    public boolean isSunk() {
