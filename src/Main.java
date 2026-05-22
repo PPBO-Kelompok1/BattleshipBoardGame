@@ -23,6 +23,15 @@ enum Difficulty {
     EXTREME
 }
 
+interface GameCallback {
+    void requestCoordinates(String prompt, CoordConsumer consumer);
+    void showMessage(String message);
+}
+
+interface CoordConsumer {
+    void accept(int row, int col);
+}
+
 final class Colors {
 
     public static String parse(String text) {
@@ -73,12 +82,27 @@ abstract class Ship {
     protected int col;
     protected Direction direction;
 
-    public Ship(String name, int width, int height) {
+    // Atribut state skillUsed
+    protected boolean skillUsed;
+
+    // Atribut tambahan: untuk merge ke visualisasi prototype
+    protected int hp;
+    protected int maxHp;
+
+    public Ship(String name, int width, int height, int hp) {
         this.name = name;
         this.width = width;
         this.height = height;
 
         direction = Direction.HORIZONTAL;
+
+        // Atribut constructor tambahan: untuk merge ke visualisasi prototype
+        this.hp = hp;
+        this.maxHp = hp;
+        this.skillUsed = false;
+
+        // Atribut state skillUsed
+        skillUsed = false;
     }
 
 //    public boolean isSunk() {
@@ -124,26 +148,86 @@ abstract class Ship {
     public Direction getDirection() {
         return direction;
     }
+
+    // Method tambahan: untuk mengatur skill
+    public void takeDamage() { hp--; }
+    public boolean isSunk() { return hp <= 0; }
+    public int getHp() { return hp; }
+    public boolean isSkillUsed() { return skillUsed; }
+    public void resetSkill() { skillUsed = false; }
+
+    public abstract void useSkill(Board enemyBoard, GameCallback callback);
 }
 
 class Destroyer extends Ship {
+    public Destroyer() { super("Destroyer", 2, 1, 1); }
 
-    public Destroyer() {
-        super("Destroyer", 2, 1);
+    @Override
+    public void useSkill(Board enemyBoard, GameCallback callback) {
+        if (skillUsed) { callback.showMessage("Skill already used!"); return; }
+        skillUsed = true;
+        doStrike(enemyBoard, callback, 1);
+    }
+
+    private void doStrike(Board enemyBoard, GameCallback callback, int strikeNum) {
+        if (strikeNum > 2) return;
+        callback.requestCoordinates("Double Strike #" + strikeNum + " — pick a tile", (row, col) -> {
+            Tile tile = enemyBoard.getTile(row, col);
+            if (tile.isAttacked()) {
+                callback.showMessage("Already attacked! Pick again.");
+                doStrike(enemyBoard, callback, strikeNum); // retry
+                return;
+            }
+            enemyBoard.attackTile(row, col);
+            String result = tile.hasShip()
+                    ? (enemyBoard.isShipSunk(tile.getShip()) ? tile.getShip().getName() + " SUNK!" : "HIT!")
+                    : "Miss.";
+            callback.showMessage("Strike #" + strikeNum + ": " + result);
+            doStrike(enemyBoard, callback, strikeNum + 1);
+        });
     }
 }
 
 class Battleship extends Ship {
+    public Battleship() { super("Battleship", 2, 2, 1); }
 
-    public Battleship() {
-        super("Battleship", 2, 2);
+    @Override
+    public void useSkill(Board enemyBoard, GameCallback callback) {
+        if (skillUsed) { callback.showMessage("Skill already used!"); return; }
+        callback.requestCoordinates("Area Bombardment — pick top-left of 2×2", (row, col) -> {
+            skillUsed = true;
+            StringBuilder log = new StringBuilder("Bombardment results:<br>");
+            for (int r = row; r < row + 2; r++) {
+                for (int c = col; c < col + 2; c++) {
+                    try {
+                        Tile tile = enemyBoard.getTile(r, c);
+                        if (tile.isAttacked()) continue;
+                        enemyBoard.attackTile(r, c);
+                        log.append(tile.hasShip() ? "Hit" : "Miss")
+                                .append(" at (").append(r).append(",").append(c).append(")<br>");
+                    } catch (Exception ignored) {}
+                }
+            }
+            callback.showMessage(log.toString());
+        });
     }
 }
 
 class Submarine extends Ship {
+    public Submarine() { super("Submarine", 3, 1, 1); }
 
-    public Submarine() {
-        super("Submarine", 3, 1);
+    @Override
+    public void useSkill(Board enemyBoard, GameCallback callback) {
+        if (skillUsed) { callback.showMessage("Skill already used!"); return; }
+        callback.requestCoordinates("Sonar Scan — pick top-left of 2×2 area", (row, col) -> {
+            skillUsed = true;
+            boolean detected = false;
+            for (int r = row; r < row + 2 && !detected; r++)
+                for (int c = col; c < col + 2 && !detected; c++)
+                    try { if (enemyBoard.getTile(r, c).hasShip()) detected = true; }
+                    catch (Exception ignored) {}
+            callback.showMessage(detected ? "Sonar: SHIP DETECTED nearby!" : "Sonar: All clear.");
+        });
     }
 }
 
@@ -981,7 +1065,8 @@ class AIPlayer extends Player {
     }
 }
 
-class Game extends JFrame {
+// Game: implementasi interface untuk gameplay
+class Game extends JFrame implements GameCallback{
 
     private static final int BOARD_SIZE = 10;
     private static final int SHIP_COUNT = 3;
@@ -994,6 +1079,10 @@ class Game extends JFrame {
     private final JComboBox<Difficulty> difficultyBox;
     private final JComboBox<String> shipBox;
     private final JComboBox<Direction> directionBox;
+
+    // Atribut Swing tambahan: difficulty, box dan direction, dan skill
+    private final JComboBox<String> skillShipBox;
+
     private final JLabel statusLabel;
     private final JLabel turnLabel;
     private final JLabel setupLabel;
@@ -1003,6 +1092,10 @@ class Game extends JFrame {
     private boolean gameStarted;
     private boolean playerTurn;
     private boolean revealEnemyShips;
+
+    // Atribut tambahan: menyesuaikan dengan implementasi interface gameplay
+    private boolean awaitingSkillInput = false;
+    private CoordConsumer pendingCoordConsumer = null;
 
     public Game() {
         super("Battleship Swing");
@@ -1027,9 +1120,26 @@ class Game extends JFrame {
         difficultyBox.setRenderer(new FriendlyEnumRenderer<>());
         directionBox.setRenderer(new FriendlyEnumRenderer<>());
 
+        // Objek Swing: combo box skill
+        skillShipBox = new JComboBox<>();
+
         buildUi();
         refreshBoards();
     }
+
+    // Method tambahan: Override dari interface
+    @Override
+    public void requestCoordinates(String prompt, CoordConsumer consumer) {
+        awaitingSkillInput = true;
+        pendingCoordConsumer = consumer;
+        statusLabel.setText(prompt + " — click a tile on the AI board.");
+    }
+
+    @Override
+    public void showMessage(String message) {
+        statusLabel.setText("<html>" + message + "</html>");
+    }
+    // Akhir method tambahan
 
     public void start() {
         setVisible(true);
@@ -1039,6 +1149,18 @@ class Game extends JFrame {
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setMinimumSize(new Dimension(980, 680));
         setLocationRelativeTo(null);
+
+        // Atribut/Objek Swing tambahan: skill selector
+        JButton skillButton = new JButton("Use Skill");
+
+        // UI tambahan: tombol skill
+        skillButton.addActionListener(e -> {
+            if (!gameStarted || !playerTurn) return;
+            int idx = skillShipBox.getSelectedIndex();
+            if (idx < 0 || idx >= player.ships.size()) return;
+            Ship ship = player.ships.get(idx);
+            ship.useSkill(ai.getBoard(), this);
+        });
 
         JPanel root = new JPanel(new BorderLayout(16, 16));
         root.setBorder(new EmptyBorder(16, 16, 16, 16));
@@ -1056,6 +1178,11 @@ class Game extends JFrame {
         controls.add(shipBox);
         controls.add(controlLabel("Direction"));
         controls.add(directionBox);
+
+        // Method tambahan: skill selector
+        controls.add(controlLabel("Skill"));
+        controls.add(skillShipBox);
+        controls.add(skillButton);
 
         JButton rotateButton = new JButton("Rotate");
         rotateButton.addActionListener(e -> toggleDirection());
@@ -1157,6 +1284,10 @@ class Game extends JFrame {
         turnLabel.setText("Player Turn");
         setupLabel.setText("Attack the concealed AI board.");
         statusLabel.setText("Game start. You have " + attacksLeft + " attacks.");
+
+        for (Ship ship : player.ships) {
+            skillShipBox.addItem(ship.getName());
+        }
     }
 
     private void placeAiShips() {
@@ -1183,7 +1314,26 @@ class Game extends JFrame {
         };
     }
 
+    // Method modifikasi: untuk cek kondisi menang
+    private void checkWinCondition() {
+        if (ai.allShipsSunk()) {
+            revealEnemyShips = true;
+            endGame("Player wins. All AI ships are sunk.");
+        }
+    }
+
     private void handleEnemyBoardClick(int row, int col) {
+
+        if (awaitingSkillInput && pendingCoordConsumer != null) {
+            awaitingSkillInput = false;
+            CoordConsumer consumer = pendingCoordConsumer;
+            pendingCoordConsumer = null;
+            consumer.accept(row, col);
+            refreshBoards();
+            checkWinCondition();
+            return;
+        }
+
         if (!gameStarted || !playerTurn) {
             return;
         }
@@ -1212,10 +1362,9 @@ class Game extends JFrame {
 
         refreshBoards();
 
-        if (ai.allShipsSunk()) {
-            endGame("Player wins. All AI ships are sunk.");
-            return;
-        }
+        // Method modifikasi: untuk cek kondisi menang
+        checkWinCondition();
+        if (!gameStarted) return; // endGame() sets gameStarted = false
 
         if (attacksLeft == 0) {
             startAiTurn();
