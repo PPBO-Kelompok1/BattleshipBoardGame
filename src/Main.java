@@ -1286,7 +1286,26 @@ class Game extends JFrame implements GameCallback{
         };
     }
 
+    // Method modifikasi: untuk cek kondisi menang
+    private void checkWinCondition() {
+        if (ai.allShipsSunk()) {
+            revealEnemyShips = true;
+            endGame("Player wins. All AI ships are sunk.");
+        }
+    }
+
     private void handleEnemyBoardClick(int row, int col) {
+
+        if (awaitingSkillInput && pendingCoordConsumer != null) {
+            awaitingSkillInput = false;
+            CoordConsumer consumer = pendingCoordConsumer;
+            pendingCoordConsumer = null;
+            consumer.accept(row, col);
+            refreshBoards();
+            checkWinCondition();
+            return;
+        }
+
         if (!gameStarted || !playerTurn) {
             return;
         }
@@ -1315,10 +1334,9 @@ class Game extends JFrame implements GameCallback{
 
         refreshBoards();
 
-        if (ai.allShipsSunk()) {
-            endGame("Player wins. All AI ships are sunk.");
-            return;
-        }
+        // Method modifikasi: untuk cek kondisi menang
+        checkWinCondition();
+        if (!gameStarted) return; // endGame() sets gameStarted = false
 
         if (attacksLeft == 0) {
             startAiTurn();
