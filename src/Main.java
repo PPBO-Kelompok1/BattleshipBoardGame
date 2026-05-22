@@ -82,10 +82,12 @@ abstract class Ship {
     protected int col;
     protected Direction direction;
 
+    // Atribut state skillUsed
+    protected boolean skillUsed;
+
     // Atribut tambahan: untuk merge ke visualisasi prototype
     protected int hp;
     protected int maxHp;
-    protected boolean skillUsed;
 
     public Ship(String name, int width, int height, int hp) {
         this.name = name;
@@ -98,6 +100,9 @@ abstract class Ship {
         this.hp = hp;
         this.maxHp = hp;
         this.skillUsed = false;
+
+        // Atribut state skillUsed
+        skillUsed = false;
     }
 
 //    public boolean isSunk() {
@@ -143,6 +148,15 @@ abstract class Ship {
     public Direction getDirection() {
         return direction;
     }
+
+    // Method tambahan: untuk mengatur skill
+    public void takeDamage() { hp--; }
+    public boolean isSunk() { return hp <= 0; }
+    public int getHp() { return hp; }
+    public boolean isSkillUsed() { return skillUsed; }
+    public void resetSkill() { skillUsed = false; }
+
+    public abstract void useSkill(Board enemyBoard, GameCallback callback);
 }
 
 class Destroyer extends Ship {
