@@ -4,7 +4,7 @@ import core.Direction;
 import input.GameCallback;
 import physics.Board;
 
-public abstract class Ship {
+public abstract class Ship implements Skillable {
 
     protected String name;
     protected int width;
