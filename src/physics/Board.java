@@ -63,6 +63,64 @@ public class Board {
         return true;
     }
 
+    public boolean canPlaceShipWithBuffer(Ship ship, int row, int col, int bufferSize) {
+        if (!canPlaceShip(ship, row, col)) {
+            return false;
+        }
+
+        int startRow = Math.max(0, row - bufferSize);
+        int endRow = Math.min(rows - 1, row + ship.getActualHeight() + bufferSize - 1);
+        int startCol = Math.max(0, col - bufferSize);
+        int endCol = Math.min(cols - 1, col + ship.getActualWidth() + bufferSize - 1);
+
+        for (int r = startRow; r <= endRow; r++) {
+            for (int c = startCol; c <= endCol; c++) {
+                if (grid[r][c].hasShip()) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    public int calculatePlacementSpacingScore(Ship ship, int row, int col) {
+        if (!canPlaceShip(ship, row, col)) {
+            return -1;
+        }
+
+        int closestDistance = Integer.MAX_VALUE;
+        int totalDistance = 0;
+        int existingShipTiles = 0;
+
+        for (int boardRow = 0; boardRow < rows; boardRow++) {
+            for (int boardCol = 0; boardCol < cols; boardCol++) {
+                if (!grid[boardRow][boardCol].hasShip()) {
+                    continue;
+                }
+
+                existingShipTiles++;
+
+                for (int shipRow = row; shipRow < row + ship.getActualHeight(); shipRow++) {
+                    for (int shipCol = col; shipCol < col + ship.getActualWidth(); shipCol++) {
+                        int rowDistance = Math.abs(shipRow - boardRow);
+                        int colDistance = Math.abs(shipCol - boardCol);
+                        int distance = Math.max(rowDistance, colDistance);
+
+                        closestDistance = Math.min(closestDistance, distance);
+                        totalDistance += distance;
+                    }
+                }
+            }
+        }
+
+        if (existingShipTiles == 0) {
+            return 0;
+        }
+
+        return closestDistance * 1000 + totalDistance;
+    }
+
     public boolean attackTile(int row, int col) {
         Tile tile = grid[row][col];
 

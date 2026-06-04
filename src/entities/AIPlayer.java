@@ -39,15 +39,70 @@ public class AIPlayer extends Player {
     }
 
     public void placeShipRandomly(Ship ship) {
-        boolean placed = false;
+        Direction originalDirection = ship.getDirection();
+        List<PlacementOption> bufferedOptions = findBestPlacementOptions(ship, true);
+        List<PlacementOption> fallbackOptions = bufferedOptions.isEmpty()
+                ? findBestPlacementOptions(ship, false)
+                : bufferedOptions;
 
-        while (!placed) {
-            int row = random.nextInt(board.getRows());
-            int col = random.nextInt(board.getCols());
-            placed = board.placeShip(ship, row, col);
+        if (fallbackOptions.isEmpty()) {
+            ship.setDirection(originalDirection);
+            return;
         }
 
+        PlacementOption selected = fallbackOptions.get(random.nextInt(fallbackOptions.size()));
+        ship.setDirection(selected.direction);
+        board.placeShip(ship, selected.row, selected.col);
         addShip(ship);
+    }
+
+    private List<PlacementOption> findBestPlacementOptions(Ship ship, boolean useBuffer) {
+        List<PlacementOption> bestOptions = new ArrayList<>();
+        int bestScore = -1;
+
+        Direction originalDirection = ship.getDirection();
+
+        for (Direction direction : Direction.values()) {
+            ship.setDirection(direction);
+
+            for (int row = 0; row < board.getRows(); row++) {
+                for (int col = 0; col < board.getCols(); col++) {
+                    boolean canPlace = useBuffer
+                            ? board.canPlaceShipWithBuffer(ship, row, col, 1)
+                            : board.canPlaceShip(ship, row, col);
+
+                    if (!canPlace) {
+                        continue;
+                    }
+
+                    int score = board.calculatePlacementSpacingScore(ship, row, col);
+
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestOptions.clear();
+                    }
+
+                    if (score == bestScore) {
+                        bestOptions.add(new PlacementOption(row, col, direction));
+                    }
+                }
+            }
+        }
+
+        ship.setDirection(originalDirection);
+        return bestOptions;
+    }
+
+    private static class PlacementOption {
+        private final int row;
+        private final int col;
+        private final Direction direction;
+
+        private PlacementOption(int row, int col, Direction direction) {
+            this.row = row;
+            this.col = col;
+            this.direction = direction;
+        }
     }
 
     public void performTurn(Player target) {
