@@ -4,6 +4,7 @@ import config.GameConfig;
 import entities.AIPlayer;
 import entities.Battleship;
 import entities.Carrier;
+import entities.DecoyShip;
 import entities.Destroyer;
 import entities.PhantomCruiser;
 import entities.Player;
@@ -240,6 +241,7 @@ public class Game extends JFrame implements GameCallback {
                 consumer.accept(row, col);
                 refreshSkillShipBox();
                 refreshBoards();
+                return;
             }
 
             if (awaitingSkillInput) {
@@ -354,7 +356,11 @@ public class Game extends JFrame implements GameCallback {
             Ship ship = tile.getShip();
 
             if (ai.getBoard().isShipSunk(ship)) {
-                statusLabel.setText("Red explosion. You sunk an enemy " + ship.getName() + "!");
+                if (ship instanceof DecoyShip || !ship.countsForVictory()) {
+                    statusLabel.setText("Red explosion. You destroyed an enemy Decoy Ship! It was not an objective ship.");
+                } else {
+                    statusLabel.setText("Red explosion. You sunk an enemy " + ship.getName() + "!");
+                }
             } else {
                 statusLabel.setText("Red explosion. Hit on an enemy ship.");
             }
@@ -420,6 +426,13 @@ public class Game extends JFrame implements GameCallback {
 
         String aiSkillMessage = ai.getLastAiSkillMessage();
         String attackMessage = "AI attack flashes: " + hits + " hit, " + misses + " miss.";
+        int destroyedDecoys = ai.getLastDestroyedDecoyCount();
+
+        if (destroyedDecoys == 1) {
+            attackMessage += "<br>AI destroyed 1 of your Decoy Ship. It was not an objective ship.";
+        } else if (destroyedDecoys > 1) {
+            attackMessage += "<br>AI destroyed " + destroyedDecoys + " of your Decoy Ships. They were not objective ships.";
+        }
 
         if (aiSkillMessage != null && !aiSkillMessage.isEmpty()) {
             statusLabel.setText("<html>" + aiSkillMessage + "<br>" + attackMessage + "</html>");

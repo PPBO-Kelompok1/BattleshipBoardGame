@@ -3,6 +3,7 @@ package rendering;
 import core.Direction;
 import entities.Battleship;
 import entities.Carrier;
+import entities.DecoyShip;
 import entities.Destroyer;
 import entities.PhantomCruiser;
 import entities.RadarCruiser;
@@ -184,6 +185,10 @@ public class BoardPanel extends JPanel {
     }
 
     private String shipCode(Ship ship) {
+        if (ship instanceof DecoyShip) {
+            return "X";
+        }
+
         if (ship instanceof Battleship) {
             return "B";
         }

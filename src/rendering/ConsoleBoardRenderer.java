@@ -1,6 +1,7 @@
 package rendering;
 
 import entities.Battleship;
+import entities.DecoyShip;
 import entities.Destroyer;
 import entities.Ship;
 import entities.Submarine;
@@ -72,6 +73,10 @@ public final class ConsoleBoardRenderer {
     }
 
     private static String shipCode(Ship ship) {
+        if (ship instanceof DecoyShip) {
+            return "X";
+        }
+
         if (ship instanceof Battleship) {
             return "B";
         }

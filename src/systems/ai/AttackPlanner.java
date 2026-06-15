@@ -23,6 +23,7 @@ public class AttackPlanner {
     private Difficulty difficulty;
     private int currentTurn;
     private String lastAiSkillMessage;
+    private int lastDestroyedDecoyCount;
 
     public AttackPlanner(Random random) {
         this.random = random;
@@ -45,11 +46,16 @@ public class AttackPlanner {
         return lastAiSkillMessage;
     }
 
+    public int getLastDestroyedDecoyCount() {
+        return lastDestroyedDecoyCount;
+    }
+
     public void performTurn(AIPlayer ai, Player target) {
         currentTurn++;
         processMemoryForget();
         target.getBoard().clearRecentAttacks();
         lastAiSkillMessage = "";
+        lastDestroyedDecoyCount = 0;
 
         int attacks = aiSkillPlanner.tryUseSkill(ai, target, this);
         lastAiSkillMessage = aiSkillPlanner.getLastSkillMessage();
@@ -125,8 +131,13 @@ public class AttackPlanner {
             return false;
         }
 
+        Ship shipBefore = tile.getShip();
         board.attackTile(row, col);
         tile.setRecentlyAttacked(true);
+
+        if (shipBefore != null && shipBefore.isSunk() && !shipBefore.countsForVictory()) {
+            lastDestroyedDecoyCount++;
+        }
 
         boolean hit = AIPlayer.isHit(tile);
 

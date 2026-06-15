@@ -95,6 +95,10 @@ public abstract class Ship implements Skillable {
         return !isSunk() && !skillUsed && isSkillUnlocked();
     }
 
+    public boolean countsForVictory() {
+        return true;
+    }
+
     public String getSkillStatusText() {
         if (isSunk()) {
             return "SUNK";

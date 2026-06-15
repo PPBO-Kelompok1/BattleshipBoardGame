@@ -69,6 +69,24 @@ public class Board {
         return true;
     }
 
+    public boolean canPlaceDecoyShip(Ship ship, int row, int col) {
+        if (!canPlaceShip(ship, row, col)) {
+            return false;
+        }
+
+        for (int r = 0; r < ship.getActualHeight(); r++) {
+            for (int c = 0; c < ship.getActualWidth(); c++) {
+                Tile tile = grid[row + r][col + c];
+
+                if (tile.isAttacked() || tile.isInteracted()) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
     public boolean canPlaceShipWithBuffer(Ship ship, int row, int col, int bufferSize) {
         if (!canPlaceShip(ship, row, col)) {
             return false;
@@ -111,6 +129,22 @@ public class Board {
 
     public boolean placeShip(Ship ship, int row, int col) {
         if (!canPlaceShip(ship, row, col)) {
+            return false;
+        }
+
+        ship.place(row, col);
+
+        for (int r = 0; r < ship.getActualHeight(); r++) {
+            for (int c = 0; c < ship.getActualWidth(); c++) {
+                grid[row + r][col + c].setShip(ship);
+            }
+        }
+
+        return true;
+    }
+
+    public boolean placeDecoyShip(Ship ship, int row, int col) {
+        if (!canPlaceDecoyShip(ship, row, col)) {
             return false;
         }
 

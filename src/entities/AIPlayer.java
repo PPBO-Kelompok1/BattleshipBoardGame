@@ -80,6 +80,10 @@ public class AIPlayer extends Player {
         return attackPlanner.getLastAiSkillMessage();
     }
 
+    public int getLastDestroyedDecoyCount() {
+        return attackPlanner.getLastDestroyedDecoyCount();
+    }
+
     public int getRows() {
         return board.getRows();
     }
@@ -110,6 +114,10 @@ public class AIPlayer extends Player {
     }
 
     public static void discoverShip(List<Ship> targetShips, Difficulty difficulty, Ship ship, Board board) {
+        if (ship == null || !ship.countsForVictory()) {
+            return;
+        }
+
         if (difficulty == Difficulty.EASY) {
             return;
         }

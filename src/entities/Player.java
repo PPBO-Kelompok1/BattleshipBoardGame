@@ -30,6 +30,10 @@ public class Player {
 
     public boolean allShipsSunk() {
         for (Ship ship : ships) {
+            if (!ship.countsForVictory()) {
+                continue;
+            }
+
             if (!board.isShipSunk(ship)) {
                 return false;
             }
