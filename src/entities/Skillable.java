@@ -5,5 +5,5 @@ import physics.Board;
 
 public interface Skillable {
 
-    void useSkill(Board enemyBoard, GameCallback callback);
+    void useSkill(Board ownBoard, Board enemyBoard, GameCallback callback);
 }

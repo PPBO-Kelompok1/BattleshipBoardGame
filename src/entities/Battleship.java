@@ -1,44 +1,46 @@
 package entities;
 
 import input.GameCallback;
+import input.CoordTarget;
 import physics.Board;
 import physics.Tile;
 
 public class Battleship extends Ship {
 
     public Battleship() {
-        super("Battleship", 2, 2, 1);
+        super("Battleship", 2, 2, 4, 2);
     }
 
     @Override
-    public void useSkill(Board enemyBoard, GameCallback callback) {
-        if (skillUsed) {
-            callback.showMessage("Skill already used!");
+    public void useSkill(Board ownBoard, Board enemyBoard, GameCallback callback) {
+        if (!validateSkillUsage(callback)) {
             return;
         }
 
         callback.requestCoordinates("Area Bombardment - pick top-left of 2x2", (row, col) -> {
+            if (!enemyBoard.isInside(row, col) || !enemyBoard.isInside(row + 1, col + 1)) {
+                callback.showMessage("Area Bombardment target must keep the full 2x2 area inside the board.");
+                return;
+            }
+
             skillUsed = true;
             StringBuilder log = new StringBuilder("Bombardment results:<br>");
 
             for (int r = row; r < row + 2; r++) {
                 for (int c = col; c < col + 2; c++) {
-                    try {
-                        Tile tile = enemyBoard.getTile(r, c);
+                    Tile tile = enemyBoard.getTile(r, c);
 
-                        if (tile.isAttacked()) {
-                            continue;
-                        }
-
-                        enemyBoard.attackTile(r, c);
-                        log.append(tile.hasShip() ? "Hit" : "Miss")
-                                .append(" at (").append(r).append(",").append(c).append(")<br>");
-                    } catch (Exception ignored) {
+                    if (tile.isAttacked()) {
+                        continue;
                     }
+
+                    enemyBoard.attackTile(r, c);
+                    log.append(tile.hasShip() ? "Hit" : "Miss")
+                            .append(" at (").append(r).append(",").append(c).append(")<br>");
                 }
             }
 
             callback.showMessage(log.toString());
-        });
+        }, CoordTarget.ENEMY_BOARD);
     }
 }

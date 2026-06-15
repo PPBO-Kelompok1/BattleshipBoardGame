@@ -2,7 +2,10 @@ package rendering;
 
 import core.Direction;
 import entities.Battleship;
+import entities.Carrier;
 import entities.Destroyer;
+import entities.PhantomCruiser;
+import entities.RadarCruiser;
 import entities.Ship;
 import entities.Submarine;
 import physics.Board;
@@ -27,7 +30,8 @@ public class BoardPanel extends JPanel {
     private static final Color VALID_PLACEMENT = new Color(73, 187, 119);
     private static final Color INVALID_PLACEMENT = new Color(184, 50, 59);
     private static final Color RECENT_ATTACK = new Color(255, 194, 41);
-    private static final Color HIT = new Color(202, 35, 45);
+    private static final Color HIT_NOT_SUNK = new Color(255, 120, 60);
+    private static final Color SUNK = Color.RED;
     private static final Color MISS = new Color(194, 232, 240);
     private static final Color MISS_TEXT = new Color(23, 55, 73);
     private static final Color SHIP = new Color(91, 106, 117);
@@ -123,18 +127,25 @@ public class BoardPanel extends JPanel {
 
     private void styleButton(TileButton button, boolean hoverTarget) {
         Tile tile = board.getTile(button.row, button.col);
+        TileVisualState visualState = getVisualState(tile);
         button.setText("");
         button.setForeground(Color.WHITE);
+
+        if (visualState == TileVisualState.HIT_NOT_SUNK) {
+            button.setBackground(HIT_NOT_SUNK);
+            button.setText("X");
+            return;
+        }
+
+        if (visualState == TileVisualState.SUNK) {
+            button.setBackground(SUNK);
+            button.setText("X");
+            return;
+        }
 
         if (tile.isRecentlyAttacked()) {
             button.setBackground(RECENT_ATTACK);
             button.setText(tile.hasShip() ? "X" : "O");
-            return;
-        }
-
-        if (tile.isAttacked() && tile.hasShip()) {
-            button.setBackground(HIT);
-            button.setText("X");
             return;
         }
 
@@ -154,6 +165,24 @@ public class BoardPanel extends JPanel {
         button.setBackground(hoverTarget ? TARGET_HOVER : WATER);
     }
 
+    private TileVisualState getVisualState(Tile tile) {
+        if (!tile.hasShip() || !tile.isAttacked()) {
+            return TileVisualState.ALIVE;
+        }
+
+        if (tile.getShip().isSunk()) {
+            return TileVisualState.SUNK;
+        }
+
+        return TileVisualState.HIT_NOT_SUNK;
+    }
+
+    private enum TileVisualState {
+        ALIVE,
+        HIT_NOT_SUNK,
+        SUNK
+    }
+
     private String shipCode(Ship ship) {
         if (ship instanceof Battleship) {
             return "B";
@@ -165,6 +194,18 @@ public class BoardPanel extends JPanel {
 
         if (ship instanceof Destroyer) {
             return "D";
+        }
+
+        if (ship instanceof PhantomCruiser) {
+            return "P";
+        }
+
+        if (ship instanceof RadarCruiser) {
+            return "R";
+        }
+
+        if (ship instanceof Carrier) {
+            return "C";
         }
 
         return "?";

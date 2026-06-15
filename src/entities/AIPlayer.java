@@ -26,87 +26,58 @@ public class AIPlayer extends Player {
     }
 
     public Ship randomShip() {
-        int choice = random.nextInt(3);
+        int choice = random.nextInt(6);
 
         switch (choice) {
             case 0:
                 return new Destroyer();
             case 1:
                 return new Battleship();
-            default:
+            case 2:
                 return new Submarine();
+            case 3:
+                return new PhantomCruiser();
+            case 4:
+                return new RadarCruiser();
+            default:
+                return new Carrier();
         }
     }
 
     public void placeShipRandomly(Ship ship) {
         Direction originalDirection = ship.getDirection();
-        List<PlacementOption> bufferedOptions = findBestPlacementOptions(ship, true);
-        List<PlacementOption> fallbackOptions = bufferedOptions.isEmpty()
-                ? findBestPlacementOptions(ship, false)
-                : bufferedOptions;
 
-        if (fallbackOptions.isEmpty()) {
+        if (tryPlaceRandomly(ship, true) || tryPlaceRandomly(ship, false)) {
+            addShip(ship);
+        } else {
             ship.setDirection(originalDirection);
-            return;
         }
-
-        PlacementOption selected = fallbackOptions.get(random.nextInt(fallbackOptions.size()));
-        ship.setDirection(selected.direction);
-        board.placeShip(ship, selected.row, selected.col);
-        addShip(ship);
     }
 
-    private List<PlacementOption> findBestPlacementOptions(Ship ship, boolean useBuffer) {
-        List<PlacementOption> bestOptions = new ArrayList<>();
-        int bestScore = -1;
+    private boolean tryPlaceRandomly(Ship ship, boolean requireSeparation) {
+        for (int attempt = 0; attempt < 500; attempt++) {
+            ship.setDirection(random.nextBoolean() ? Direction.HORIZONTAL : Direction.VERTICAL);
 
-        Direction originalDirection = ship.getDirection();
+            int row = random.nextInt(board.getRows());
+            int col = random.nextInt(board.getCols());
+            boolean canPlace = requireSeparation
+                    ? board.canPlaceShipWithBuffer(ship, row, col, 2)
+                    : board.canPlaceShip(ship, row, col);
 
-        for (Direction direction : Direction.values()) {
-            ship.setDirection(direction);
-
-            for (int row = 0; row < board.getRows(); row++) {
-                for (int col = 0; col < board.getCols(); col++) {
-                    boolean canPlace = useBuffer
-                            ? board.canPlaceShipWithBuffer(ship, row, col, 1)
-                            : board.canPlaceShip(ship, row, col);
-
-                    if (!canPlace) {
-                        continue;
-                    }
-
-                    int score = board.calculatePlacementSpacingScore(ship, row, col);
-
-                    if (score > bestScore) {
-                        bestScore = score;
-                        bestOptions.clear();
-                    }
-
-                    if (score == bestScore) {
-                        bestOptions.add(new PlacementOption(row, col, direction));
-                    }
-                }
+            if (canPlace && board.placeShip(ship, row, col)) {
+                return true;
             }
         }
 
-        ship.setDirection(originalDirection);
-        return bestOptions;
-    }
-
-    private static class PlacementOption {
-        private final int row;
-        private final int col;
-        private final Direction direction;
-
-        private PlacementOption(int row, int col, Direction direction) {
-            this.row = row;
-            this.col = col;
-            this.direction = direction;
-        }
+        return false;
     }
 
     public void performTurn(Player target) {
         attackPlanner.performTurn(this, target);
+    }
+
+    public String getLastAiSkillMessage() {
+        return attackPlanner.getLastAiSkillMessage();
     }
 
     public int getRows() {
@@ -122,6 +93,9 @@ public class AIPlayer extends Player {
         possibleShips.add(new Destroyer());
         possibleShips.add(new Battleship());
         possibleShips.add(new Submarine());
+        possibleShips.add(new PhantomCruiser());
+        possibleShips.add(new RadarCruiser());
+        possibleShips.add(new Carrier());
         return possibleShips;
     }
 

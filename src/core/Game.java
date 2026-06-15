@@ -3,11 +3,15 @@ package core;
 import config.GameConfig;
 import entities.AIPlayer;
 import entities.Battleship;
+import entities.Carrier;
 import entities.Destroyer;
+import entities.PhantomCruiser;
 import entities.Player;
+import entities.RadarCruiser;
 import entities.Ship;
 import entities.Submarine;
 import input.CoordConsumer;
+import input.CoordTarget;
 import input.GameCallback;
 import physics.Tile;
 import rendering.BoardPanel;
@@ -49,6 +53,7 @@ public class Game extends JFrame implements GameCallback {
     private boolean playerTurn;
     private boolean revealEnemyShips;
     private boolean awaitingSkillInput;
+    private CoordTarget pendingCoordTarget;
     private CoordConsumer pendingCoordConsumer;
 
     public Game() {
@@ -61,11 +66,14 @@ public class Game extends JFrame implements GameCallback {
         shipBox = new JComboBox<>(new String[]{
                 "Destroyer (2x1)",
                 "Battleship (2x2)",
-                "Submarine (3x1)"
+                "Submarine (3x1)",
+                "Phantom Cruiser (4x1)",
+                "Radar Cruiser (3x2)",
+                "Carrier (4x2)"
         });
         directionBox = new JComboBox<>(Direction.values());
         skillShipBox = new JComboBox<>();
-        statusLabel = new JLabel("Choose difficulty, then place 3 ships on your board.");
+        statusLabel = new JLabel("Choose difficulty, then place 6 ships on your board.");
         turnLabel = new JLabel("Setup");
         setupLabel = new JLabel("Ships placed: 0 / " + GameConfig.SHIP_COUNT);
 
@@ -100,10 +108,12 @@ public class Game extends JFrame implements GameCallback {
     }
 
     @Override
-    public void requestCoordinates(String prompt, CoordConsumer consumer) {
+    public void requestCoordinates(String prompt, CoordConsumer consumer, CoordTarget target) {
         awaitingSkillInput = true;
+        pendingCoordTarget = target;
         pendingCoordConsumer = consumer;
-        statusLabel.setText(prompt + " - click a tile on the AI board.");
+        String boardName = target == CoordTarget.OWN_BOARD ? "your board" : "the AI board";
+        statusLabel.setText(prompt + " - click a tile on " + boardName + ".");
     }
 
     @Override
@@ -133,7 +143,8 @@ public class Game extends JFrame implements GameCallback {
             }
 
             Ship ship = player.getShips().get(idx);
-            ship.useSkill(ai.getBoard(), this);
+            ship.useSkill(player.getBoard(), ai.getBoard(), this);
+            refreshSkillShipBox();
         });
 
         JPanel root = new JPanel(new BorderLayout(16, 16));
@@ -221,6 +232,20 @@ public class Game extends JFrame implements GameCallback {
 
     private void handlePlayerBoardClick(int row, int col) {
         if (gameStarted) {
+            if (awaitingSkillInput && pendingCoordTarget == CoordTarget.OWN_BOARD && pendingCoordConsumer != null) {
+                awaitingSkillInput = false;
+                pendingCoordTarget = null;
+                CoordConsumer consumer = pendingCoordConsumer;
+                pendingCoordConsumer = null;
+                consumer.accept(row, col);
+                refreshSkillShipBox();
+                refreshBoards();
+            }
+
+            if (awaitingSkillInput) {
+                statusLabel.setText("That skill is waiting for a target on the AI board.");
+            }
+
             return;
         }
 
@@ -256,10 +281,7 @@ public class Game extends JFrame implements GameCallback {
         turnLabel.setText("Player Turn");
         setupLabel.setText("Attack the concealed AI board.");
         statusLabel.setText("Game start. You have " + attacksLeft + " attacks.");
-
-        for (Ship ship : player.getShips()) {
-            skillShipBox.addItem(ship.getName());
-        }
+        refreshSkillShipBox();
     }
 
     private void placeAiShips() {
@@ -282,6 +304,9 @@ public class Game extends JFrame implements GameCallback {
         return switch (selected) {
             case 1 -> new Battleship();
             case 2 -> new Submarine();
+            case 3 -> new PhantomCruiser();
+            case 4 -> new RadarCruiser();
+            case 5 -> new Carrier();
             default -> new Destroyer();
         };
     }
@@ -294,13 +319,20 @@ public class Game extends JFrame implements GameCallback {
     }
 
     private void handleEnemyBoardClick(int row, int col) {
-        if (awaitingSkillInput && pendingCoordConsumer != null) {
+        if (awaitingSkillInput && pendingCoordTarget == CoordTarget.ENEMY_BOARD && pendingCoordConsumer != null) {
             awaitingSkillInput = false;
+            pendingCoordTarget = null;
             CoordConsumer consumer = pendingCoordConsumer;
             pendingCoordConsumer = null;
             consumer.accept(row, col);
+            refreshSkillShipBox();
             refreshBoards();
             checkWinCondition();
+            return;
+        }
+
+        if (awaitingSkillInput) {
+            statusLabel.setText("That skill is waiting for a target on your board.");
             return;
         }
 
@@ -377,14 +409,23 @@ public class Game extends JFrame implements GameCallback {
         }
 
         refreshBoards();
+        refreshSkillShipBox();
 
         if (player.allShipsSunk()) {
             revealEnemyShips = true;
+            refreshSkillShipBox();
             endGame("AI wins. Your fleet is sunk.");
             return;
         }
 
-        statusLabel.setText("AI attack flashes: " + hits + " hit, " + misses + " miss.");
+        String aiSkillMessage = ai.getLastAiSkillMessage();
+        String attackMessage = "AI attack flashes: " + hits + " hit, " + misses + " miss.";
+
+        if (aiSkillMessage != null && !aiSkillMessage.isEmpty()) {
+            statusLabel.setText("<html>" + aiSkillMessage + "<br>" + attackMessage + "</html>");
+        } else {
+            statusLabel.setText(attackMessage);
+        }
 
         Timer timer = new Timer(900, e -> {
             ((Timer) e.getSource()).stop();
@@ -410,5 +451,19 @@ public class Game extends JFrame implements GameCallback {
     private void refreshBoards() {
         playerBoardPanel.refresh();
         enemyBoardPanel.refresh();
+    }
+
+    private void refreshSkillShipBox() {
+        int selectedIndex = skillShipBox.getSelectedIndex();
+
+        skillShipBox.removeAllItems();
+
+        for (Ship ship : player.getShips()) {
+            skillShipBox.addItem(ship.getName() + " - " + ship.getSkillStatusText());
+        }
+
+        if (selectedIndex >= 0 && selectedIndex < skillShipBox.getItemCount()) {
+            skillShipBox.setSelectedIndex(selectedIndex);
+        }
     }
 }

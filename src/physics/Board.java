@@ -29,25 +29,31 @@ public class Board {
     }
 
     public boolean isShipSunk(Ship ship) {
-        for (int r = 0; r < rows; r++) {
-            for (int c = 0; c < cols; c++) {
-                Tile tile = grid[r][c];
-
-                if (tile.getShip() == ship && !tile.isAttacked()) {
-                    return false;
-                }
-            }
-        }
-
-        return true;
+        return ship.isSunk();
     }
 
     public Tile getTile(int row, int col) {
         return grid[row][col];
     }
 
+    public boolean isInside(int row, int col) {
+        return row >= 0 && row < rows && col >= 0 && col < cols;
+    }
+
+    public boolean wasInteracted(int row, int col) {
+        return isInside(row, col) && grid[row][col].isInteracted();
+    }
+
+    public void markInteracted(int row, int col) {
+        if (isInside(row, col)) {
+            grid[row][col].markInteracted();
+        }
+    }
+
     public boolean canPlaceShip(Ship ship, int row, int col) {
-        if (row + ship.getActualHeight() > rows ||
+        if (row < 0 ||
+                col < 0 ||
+                row + ship.getActualHeight() > rows ||
                 col + ship.getActualWidth() > cols) {
             return false;
         }
@@ -84,48 +90,19 @@ public class Board {
         return true;
     }
 
-    public int calculatePlacementSpacingScore(Ship ship, int row, int col) {
-        if (!canPlaceShip(ship, row, col)) {
-            return -1;
-        }
-
-        int closestDistance = Integer.MAX_VALUE;
-        int totalDistance = 0;
-        int existingShipTiles = 0;
-
-        for (int boardRow = 0; boardRow < rows; boardRow++) {
-            for (int boardCol = 0; boardCol < cols; boardCol++) {
-                if (!grid[boardRow][boardCol].hasShip()) {
-                    continue;
-                }
-
-                existingShipTiles++;
-
-                for (int shipRow = row; shipRow < row + ship.getActualHeight(); shipRow++) {
-                    for (int shipCol = col; shipCol < col + ship.getActualWidth(); shipCol++) {
-                        int rowDistance = Math.abs(shipRow - boardRow);
-                        int colDistance = Math.abs(shipCol - boardCol);
-                        int distance = Math.max(rowDistance, colDistance);
-
-                        closestDistance = Math.min(closestDistance, distance);
-                        totalDistance += distance;
-                    }
-                }
-            }
-        }
-
-        if (existingShipTiles == 0) {
-            return 0;
-        }
-
-        return closestDistance * 1000 + totalDistance;
-    }
-
     public boolean attackTile(int row, int col) {
+        if (!isInside(row, col)) {
+            return false;
+        }
+
         Tile tile = grid[row][col];
 
         if (tile.isAttacked()) {
             return false;
+        }
+
+        if (tile.hasShip()) {
+            tile.getShip().takeDamage();
         }
 
         tile.attack();
@@ -137,6 +114,56 @@ public class Board {
             return false;
         }
 
+        ship.place(row, col);
+
+        for (int r = 0; r < ship.getActualHeight(); r++) {
+            for (int c = 0; c < ship.getActualWidth(); c++) {
+                grid[row + r][col + c].setShip(ship);
+            }
+        }
+
+        return true;
+    }
+
+    public void clearShipPlacement(Ship ship) {
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                if (grid[r][c].getShip() == ship) {
+                    grid[r][c].setShip(null);
+                }
+            }
+        }
+    }
+
+    public boolean canRelocateShip(Ship ship, int row, int col) {
+        if (!isInside(row, col) ||
+                !isInside(row + ship.getActualHeight() - 1, col + ship.getActualWidth() - 1)) {
+            return false;
+        }
+
+        for (int r = 0; r < ship.getActualHeight(); r++) {
+            for (int c = 0; c < ship.getActualWidth(); c++) {
+                Tile tile = grid[row + r][col + c];
+
+                if (tile.hasShip() && tile.getShip() != ship) {
+                    return false;
+                }
+
+                if (tile.isAttacked() || tile.isInteracted()) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    public boolean relocateShip(Ship ship, int row, int col) {
+        if (!canRelocateShip(ship, row, col)) {
+            return false;
+        }
+
+        clearShipPlacement(ship);
         ship.place(row, col);
 
         for (int r = 0; r < ship.getActualHeight(); r++) {

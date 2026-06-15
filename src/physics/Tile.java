@@ -7,6 +7,7 @@ public class Tile {
     private Ship ship;
     private boolean attacked;
     private boolean recentlyAttacked;
+    private boolean interacted;
 
     public boolean hasShip() {
         return ship != null;
@@ -26,6 +27,19 @@ public class Tile {
 
     public void attack() {
         attacked = true;
+        interacted = true;
+    }
+
+    public boolean isInteracted() {
+        return interacted;
+    }
+
+    public void setInteracted(boolean interacted) {
+        this.interacted = interacted;
+    }
+
+    public void markInteracted() {
+        interacted = true;
     }
 
     public boolean isRecentlyAttacked() {

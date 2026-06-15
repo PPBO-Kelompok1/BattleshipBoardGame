@@ -1,5 +1,6 @@
 package systems.ai;
 
+import config.GameConfig;
 import core.Difficulty;
 import core.Direction;
 import entities.AIPlayer;
@@ -18,76 +19,124 @@ public class AttackPlanner {
     private final Random random;
     private final List<Ship> targetShips;
     private final List<AttackMemory> memory;
+    private final AISkillPlanner aiSkillPlanner;
     private Difficulty difficulty;
     private int currentTurn;
+    private String lastAiSkillMessage;
 
     public AttackPlanner(Random random) {
         this.random = random;
         memory = new ArrayList<>();
         targetShips = new ArrayList<>();
+        aiSkillPlanner = new AISkillPlanner(random);
         currentTurn = 0;
+        lastAiSkillMessage = "";
     }
 
     public void setDifficulty(Difficulty difficulty) {
         this.difficulty = difficulty;
     }
 
+    public Difficulty getDifficulty() {
+        return difficulty;
+    }
+
+    public String getLastAiSkillMessage() {
+        return lastAiSkillMessage;
+    }
+
     public void performTurn(AIPlayer ai, Player target) {
         currentTurn++;
         processMemoryForget();
         target.getBoard().clearRecentAttacks();
+        lastAiSkillMessage = "";
 
-        int attacks = 0;
+        int attacks = aiSkillPlanner.tryUseSkill(ai, target, this);
+        lastAiSkillMessage = aiSkillPlanner.getLastSkillMessage();
 
-        while (attacks < 3) {
+        while (attacks < GameConfig.ATTACKS_PER_TURN) {
             int row;
             int col;
-            int[] focusedAttack = null;
+            int[] selected = selectNormalAttack(ai, target);
 
-            if (difficulty == Difficulty.MEDIUM || difficulty == Difficulty.HARD) {
-                focusedAttack = getFocusedAttack(target);
+            if (selected == null) {
+                break;
             }
 
-            if (focusedAttack != null) {
-                row = focusedAttack[0];
-                col = focusedAttack[1];
-            } else {
-                if (difficulty == Difficulty.EXTREME) {
-                    int[] move = getBestProbabilityAttack(ai, target);
-                    row = move[0];
-                    col = move[1];
-                } else {
-                    if (difficulty != Difficulty.EASY) {
-                        focusedAttack = getFocusedAttack(target);
-                    }
+            row = selected[0];
+            col = selected[1];
 
-                    if (focusedAttack != null) {
-                        row = focusedAttack[0];
-                        col = focusedAttack[1];
-                    } else {
-                        row = random.nextInt(ai.getRows());
-                        col = random.nextInt(ai.getCols());
-
-                        if (alreadyRemembered(row, col)) {
-                            continue;
-                        }
-                    }
-                }
+            if (!performAttack(target, row, col)) {
+                continue;
             }
 
-            Tile tile = target.getBoard().getTile(row, col);
-            target.getBoard().attackTile(row, col);
-            tile.setRecentlyAttacked(true);
-
-            boolean hit = AIPlayer.isHit(tile);
-
-            if (hit) {
-                AIPlayer.discoverShip(targetShips, difficulty, tile.getShip(), target.getBoard());
-            }
-
-            memory.add(new AttackMemory(row, col, hit, currentTurn));
             attacks++;
         }
+    }
+
+    private int[] selectNormalAttack(AIPlayer ai, Player target) {
+        int[] focusedAttack = null;
+
+        if (difficulty == Difficulty.MEDIUM || difficulty == Difficulty.HARD || difficulty == Difficulty.EXTREME) {
+            focusedAttack = getFocusedAttack(target);
+        }
+
+        if (focusedAttack != null) {
+            return focusedAttack;
+        }
+
+        int[] hintedAttack = aiSkillPlanner.pollHintedTarget(target);
+
+        if (hintedAttack != null) {
+            return hintedAttack;
+        }
+
+        if (difficulty == Difficulty.EXTREME) {
+            return getBestProbabilityAttack(ai, target);
+        }
+
+        List<int[]> candidates = new ArrayList<>();
+
+        for (int row = 0; row < target.getBoard().getRows(); row++) {
+            for (int col = 0; col < target.getBoard().getCols(); col++) {
+                if (!target.getBoard().getTile(row, col).isAttacked() && !alreadyRemembered(row, col)) {
+                    candidates.add(new int[]{row, col});
+                }
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            return null;
+        }
+
+        return candidates.get(random.nextInt(candidates.size()));
+    }
+
+    public boolean performAttack(Player target, int row, int col) {
+        Board board = target.getBoard();
+
+        if (!board.isInside(row, col)) {
+            return false;
+        }
+
+        Tile tile = board.getTile(row, col);
+
+        if (tile.isAttacked()) {
+            return false;
+        }
+
+        board.attackTile(row, col);
+        tile.setRecentlyAttacked(true);
+
+        boolean hit = AIPlayer.isHit(tile);
+
+        if (hit) {
+            AIPlayer.discoverShip(targetShips, difficulty, tile.getShip(), board);
+        }
+
+        rememberAttack(row, col, hit);
+        aiSkillPlanner.removeHint(row, col);
+        return true;
     }
 
     private void processMemoryForget() {
@@ -143,7 +192,7 @@ public class AttackPlanner {
         }
     }
 
-    private boolean alreadyRemembered(int row, int col) {
+    public boolean alreadyRemembered(int row, int col) {
         for (AttackMemory mem : memory) {
             if (mem.row == row && mem.col == col) {
                 return true;
@@ -153,9 +202,24 @@ public class AttackPlanner {
         return false;
     }
 
+    public void rememberAttack(int row, int col, boolean hit) {
+        memory.add(new AttackMemory(row, col, hit, currentTurn));
+    }
+
     private int[] getFocusedAttack(Player target) {
+        List<int[]> focusedTargets = getFocusedTargets(target, 1);
+
+        if (focusedTargets.isEmpty()) {
+            return null;
+        }
+
+        return focusedTargets.get(0);
+    }
+
+    public List<int[]> getFocusedTargets(Player target, int count) {
         Board board = target.getBoard();
         Iterator<Ship> iterator = targetShips.iterator();
+        List<int[]> targets = new ArrayList<>();
 
         while (iterator.hasNext()) {
             Ship ship = iterator.next();
@@ -189,17 +253,25 @@ public class AttackPlanner {
                                 continue;
                             }
 
-                            return new int[]{nr, nc};
+                            if (board.getTile(nr, nc).isAttacked()) {
+                                continue;
+                            }
+
+                            addUniqueTarget(targets, nr, nc);
+
+                            if (targets.size() == count) {
+                                return targets;
+                            }
                         }
                     }
                 }
             }
         }
 
-        return null;
+        return targets;
     }
 
-    private int[][] generateHeatmap(Player target) {
+    public int[][] buildHeatmap(Player target) {
         Board board = target.getBoard();
         int[][] heatmap = new int[board.getRows()][board.getCols()];
         List<HitCluster> clusters = getHitClusters(target);
@@ -261,6 +333,48 @@ public class AttackPlanner {
         return heatmap;
     }
 
+    private int[][] generateHeatmap(Player target) {
+        return buildHeatmap(target);
+    }
+
+    public List<int[]> getBestUnattackedTiles(Player target, int count) {
+        Board board = target.getBoard();
+        int[][] heatmap = buildHeatmap(target);
+        List<int[]> selected = new ArrayList<>();
+
+        while (selected.size() < count) {
+            int bestScore = -1;
+            List<int[]> bestTiles = new ArrayList<>();
+
+            for (int row = 0; row < board.getRows(); row++) {
+                for (int col = 0; col < board.getCols(); col++) {
+                    if (board.getTile(row, col).isAttacked() || alreadyRemembered(row, col) || containsTarget(selected, row, col)) {
+                        continue;
+                    }
+
+                    int score = heatmap[row][col];
+
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestTiles.clear();
+                    }
+
+                    if (score == bestScore) {
+                        bestTiles.add(new int[]{row, col});
+                    }
+                }
+            }
+
+            if (bestTiles.isEmpty()) {
+                break;
+            }
+
+            selected.add(bestTiles.get(random.nextInt(bestTiles.size())));
+        }
+
+        return selected;
+    }
+
     private int countClusterMatches(List<HitCluster> clusters, Ship ship, int row, int col) {
         int clusterMatches = 0;
 
@@ -301,13 +415,13 @@ public class AttackPlanner {
     }
 
     private int[] getBestProbabilityAttack(AIPlayer ai, Player target) {
-        int[][] heatmap = generateHeatmap(target);
+        int[][] heatmap = buildHeatmap(target);
         int bestScore = -1;
         List<int[]> bestTiles = new ArrayList<>();
 
-        for (int r = 0; r < ai.getRows(); r++) {
-            for (int c = 0; c < ai.getCols(); c++) {
-                if (alreadyRemembered(r, c)) {
+        for (int r = 0; r < target.getBoard().getRows(); r++) {
+            for (int c = 0; c < target.getBoard().getCols(); c++) {
+                if (alreadyRemembered(r, c) || target.getBoard().getTile(r, c).isAttacked()) {
                     continue;
                 }
 
@@ -323,7 +437,27 @@ public class AttackPlanner {
             }
         }
 
+        if (bestTiles.isEmpty()) {
+            return null;
+        }
+
         return bestTiles.get(random.nextInt(bestTiles.size()));
+    }
+
+    private void addUniqueTarget(List<int[]> targets, int row, int col) {
+        if (!containsTarget(targets, row, col)) {
+            targets.add(new int[]{row, col});
+        }
+    }
+
+    private boolean containsTarget(List<int[]> targets, int row, int col) {
+        for (int[] target : targets) {
+            if (target[0] == row && target[1] == col) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void floodFillCluster(
