@@ -29,16 +29,20 @@ public class Player {
     }
 
     public boolean allShipsSunk() {
+        boolean hasObjectiveShip = false;
+
         for (Ship ship : ships) {
             if (!ship.countsForVictory()) {
                 continue;
             }
+
+            hasObjectiveShip = true;
 
             if (!board.isShipSunk(ship)) {
                 return false;
             }
         }
 
-        return true;
+        return hasObjectiveShip;
     }
 }

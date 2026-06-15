@@ -20,18 +20,21 @@ public class AttackPlanner {
     private final List<Ship> targetShips;
     private final List<AttackMemory> memory;
     private final AISkillPlanner aiSkillPlanner;
+    private final GameConfig config;
     private Difficulty difficulty;
     private int currentTurn;
     private String lastAiSkillMessage;
     private int lastDestroyedDecoyCount;
 
-    public AttackPlanner(Random random) {
+    public AttackPlanner(Random random, GameConfig config) {
         this.random = random;
+        this.config = config;
         memory = new ArrayList<>();
         targetShips = new ArrayList<>();
-        aiSkillPlanner = new AISkillPlanner(random);
+        aiSkillPlanner = new AISkillPlanner(random, config);
         currentTurn = 0;
         lastAiSkillMessage = "";
+        difficulty = config.getDifficulty();
     }
 
     public void setDifficulty(Difficulty difficulty) {
@@ -60,7 +63,7 @@ public class AttackPlanner {
         int attacks = aiSkillPlanner.tryUseSkill(ai, target, this);
         lastAiSkillMessage = aiSkillPlanner.getLastSkillMessage();
 
-        while (attacks < GameConfig.ATTACKS_PER_TURN) {
+        while (attacks < config.getAttacksPerRound()) {
             int row;
             int col;
             int[] selected = selectNormalAttack(ai, target);

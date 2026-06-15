@@ -20,9 +20,12 @@ import rendering.FriendlyEnumRenderer;
 
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JSpinner;
+import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -32,10 +35,13 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
-import java.util.Random;
+import java.text.ParseException;
 
 public class Game extends JFrame implements GameCallback {
 
+    private static final int AI_SHIP_CREATION_ATTEMPTS = 100;
+
+    private final GameConfig config;
     private final Player player;
     private final AIPlayer ai;
     private final BoardPanel playerBoardPanel;
@@ -47,10 +53,13 @@ public class Game extends JFrame implements GameCallback {
     private final JLabel statusLabel;
     private final JLabel turnLabel;
     private final JLabel setupLabel;
+    private JButton skillButton;
+    private JButton rotateButton;
 
     private int placedShips;
     private int attacksLeft;
     private boolean gameStarted;
+    private boolean gameOver;
     private boolean playerTurn;
     private boolean revealEnemyShips;
     private boolean awaitingSkillInput;
@@ -60,10 +69,14 @@ public class Game extends JFrame implements GameCallback {
     public Game() {
         super("Battleship Swing");
 
-        player = new Player(GameConfig.BOARD_SIZE, GameConfig.BOARD_SIZE);
-        ai = new AIPlayer(GameConfig.BOARD_SIZE, GameConfig.BOARD_SIZE);
+        config = GameConfig.getInstance().copy();
+        player = new Player(config.getBoardSize(), config.getBoardSize());
+        ai = new AIPlayer(config.getBoardSize(), config.getBoardSize(), config);
 
         difficultyBox = new JComboBox<>(Difficulty.values());
+        difficultyBox.setSelectedItem(config.getDifficulty());
+        difficultyBox.addActionListener(e -> syncDifficultyFromLegacySelector());
+
         shipBox = new JComboBox<>(new String[]{
                 "Destroyer (2x1)",
                 "Battleship (2x2)",
@@ -74,15 +87,15 @@ public class Game extends JFrame implements GameCallback {
         });
         directionBox = new JComboBox<>(Direction.values());
         skillShipBox = new JComboBox<>();
-        statusLabel = new JLabel("Choose difficulty, then place 6 ships on your board.");
+        statusLabel = new JLabel("Choose difficulty, then place " + config.getShipsPerType() + " ships on your board.");
         turnLabel = new JLabel("Setup");
-        setupLabel = new JLabel("Ships placed: 0 / " + GameConfig.SHIP_COUNT);
+        setupLabel = new JLabel("Ships placed: 0 / " + config.getShipsPerType());
 
         playerBoardPanel = new BoardPanel(
                 player.getBoard(),
                 true,
-                GameConfig.BOARD_SIZE,
                 () -> gameStarted,
+                () -> gameOver,
                 () -> playerTurn,
                 () -> revealEnemyShips,
                 this::createSelectedShip,
@@ -92,8 +105,8 @@ public class Game extends JFrame implements GameCallback {
         enemyBoardPanel = new BoardPanel(
                 ai.getBoard(),
                 false,
-                GameConfig.BOARD_SIZE,
                 () -> gameStarted,
+                () -> gameOver,
                 () -> playerTurn,
                 () -> revealEnemyShips,
                 this::createSelectedShip,
@@ -105,11 +118,21 @@ public class Game extends JFrame implements GameCallback {
         directionBox.setRenderer(new FriendlyEnumRenderer<>());
 
         buildUi();
+        updateControlsEnabled();
         refreshBoards();
     }
 
     @Override
     public void requestCoordinates(String prompt, CoordConsumer consumer, CoordTarget target) {
+        if (gameOver) {
+            return;
+        }
+
+        if (target == CoordTarget.ENEMY_BOARD && !canUseAttack()) {
+            statusLabel.setText("No attacks left this round.");
+            return;
+        }
+
         awaitingSkillInput = true;
         pendingCoordTarget = target;
         pendingCoordConsumer = consumer;
@@ -119,7 +142,49 @@ public class Game extends JFrame implements GameCallback {
 
     @Override
     public void showMessage(String message) {
-        statusLabel.setText("<html>" + message + "</html>");
+        if (!gameOver) {
+            statusLabel.setText("<html>" + message + "</html>");
+        }
+    }
+
+    @Override
+    public int getAttacksLeft() {
+        return attacksLeft;
+    }
+
+    @Override
+    public boolean canUseAttack() {
+        return gameStarted && !gameOver && playerTurn && attacksLeft > 0;
+    }
+
+    @Override
+    public boolean consumeAttack() {
+        if (!canUseAttack()) {
+            return false;
+        }
+
+        attacksLeft--;
+        refreshBoards();
+        checkWinCondition();
+
+        if (gameOver) {
+            clearPendingSkillInput();
+            return false;
+        }
+
+        if (attacksLeft <= 0) {
+            clearPendingSkillInput();
+            startAiTurn();
+            return false;
+        }
+
+        turnLabel.setText("Player Turn - " + attacksLeft + " attacks left");
+        return true;
+    }
+
+    @Override
+    public boolean isGameOver() {
+        return gameOver;
     }
 
     public void start() {
@@ -131,22 +196,8 @@ public class Game extends JFrame implements GameCallback {
         setMinimumSize(new Dimension(980, 680));
         setLocationRelativeTo(null);
 
-        JButton skillButton = new JButton("Use Skill");
-        skillButton.addActionListener(e -> {
-            if (!gameStarted || !playerTurn) {
-                return;
-            }
-
-            int idx = skillShipBox.getSelectedIndex();
-
-            if (idx < 0 || idx >= player.getShips().size()) {
-                return;
-            }
-
-            Ship ship = player.getShips().get(idx);
-            ship.useSkill(player.getBoard(), ai.getBoard(), this);
-            refreshSkillShipBox();
-        });
+        skillButton = new JButton("Use Skill");
+        skillButton.addActionListener(e -> useSelectedSkill());
 
         JPanel root = new JPanel(new BorderLayout(16, 16));
         root.setBorder(new EmptyBorder(16, 16, 16, 16));
@@ -168,9 +219,17 @@ public class Game extends JFrame implements GameCallback {
         controls.add(skillShipBox);
         controls.add(skillButton);
 
-        JButton rotateButton = new JButton("Rotate");
-        rotateButton.addActionListener(e -> toggleDirection());
+        rotateButton = new JButton("Rotate");
+        rotateButton.addActionListener(e -> {
+            if (!gameOver && !gameStarted) {
+                toggleDirection();
+            }
+        });
         controls.add(rotateButton);
+
+        JButton configButton = new JButton("Game Config");
+        configButton.addActionListener(e -> showConfigDialog());
+        controls.add(configButton);
 
         JButton restartButton = new JButton("New Game");
         restartButton.addActionListener(e -> restart());
@@ -221,6 +280,128 @@ public class Game extends JFrame implements GameCallback {
         return label;
     }
 
+    private void showConfigDialog() {
+        GameConfig pendingConfig = GameConfig.getInstance();
+        JDialog dialog = new JDialog(this, "Game Config", true);
+        dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+
+        JComboBox<Difficulty> difficultySelector = new JComboBox<>(Difficulty.values());
+        difficultySelector.setRenderer(new FriendlyEnumRenderer<>());
+        difficultySelector.setSelectedItem(pendingConfig.getDifficulty());
+
+        JSpinner attacksSpinner = new JSpinner(new SpinnerNumberModel(
+                pendingConfig.getAttacksPerRound(),
+                GameConfig.MIN_ATTACKS_PER_ROUND,
+                GameConfig.MAX_ATTACKS_PER_ROUND,
+                1
+        ));
+        JSpinner shipsSpinner = new JSpinner(new SpinnerNumberModel(
+                pendingConfig.getShipsPerType(),
+                GameConfig.MIN_SHIPS_PER_TYPE,
+                GameConfig.MAX_SHIPS_PER_TYPE,
+                1
+        ));
+        JSpinner boardSizeSpinner = new JSpinner(new SpinnerNumberModel(
+                pendingConfig.getBoardSize(),
+                GameConfig.MIN_BOARD_SIZE,
+                GameConfig.MAX_BOARD_SIZE,
+                1
+        ));
+
+        JPanel form = new JPanel(new GridLayout(4, 2, 10, 10));
+        form.setBorder(new EmptyBorder(14, 14, 10, 14));
+        form.add(new JLabel("Difficulty"));
+        form.add(difficultySelector);
+        form.add(new JLabel("Attacks per round"));
+        form.add(attacksSpinner);
+        form.add(new JLabel("Ships to place"));
+        form.add(shipsSpinner);
+        form.add(new JLabel("Board size"));
+        form.add(boardSizeSpinner);
+
+        JButton applyButton = new JButton("Apply");
+        applyButton.addActionListener(e -> {
+            savePendingConfig(difficultySelector, attacksSpinner, shipsSpinner, boardSizeSpinner);
+            statusLabel.setText(configChangeMessage());
+        });
+
+        JButton resetButton = new JButton("Reset Defaults");
+        resetButton.addActionListener(e -> {
+            pendingConfig.resetToDefaults();
+            difficultySelector.setSelectedItem(pendingConfig.getDifficulty());
+            attacksSpinner.setValue(pendingConfig.getAttacksPerRound());
+            shipsSpinner.setValue(pendingConfig.getShipsPerType());
+            boardSizeSpinner.setValue(pendingConfig.getBoardSize());
+            syncLegacyDifficultySelector(pendingConfig.getDifficulty());
+            statusLabel.setText(configChangeMessage());
+        });
+
+        JButton closeButton = new JButton("Close");
+        closeButton.addActionListener(e -> dialog.dispose());
+
+        JPanel buttons = new JPanel();
+        buttons.add(applyButton);
+        buttons.add(resetButton);
+        buttons.add(closeButton);
+
+        dialog.add(form, BorderLayout.CENTER);
+        dialog.add(buttons, BorderLayout.SOUTH);
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+    }
+
+    private void savePendingConfig(
+            JComboBox<Difficulty> difficultySelector,
+            JSpinner attacksSpinner,
+            JSpinner shipsSpinner,
+            JSpinner boardSizeSpinner
+    ) {
+        GameConfig pendingConfig = GameConfig.getInstance();
+        pendingConfig.setDifficulty((Difficulty) difficultySelector.getSelectedItem());
+        pendingConfig.setAttacksPerRound(spinnerValue(attacksSpinner));
+        pendingConfig.setShipsPerType(spinnerValue(shipsSpinner));
+        pendingConfig.setBoardSize(spinnerValue(boardSizeSpinner));
+        syncLegacyDifficultySelector(pendingConfig.getDifficulty());
+    }
+
+    private int spinnerValue(JSpinner spinner) {
+        try {
+            spinner.commitEdit();
+        } catch (ParseException ignored) {
+            spinner.setValue(((SpinnerNumberModel) spinner.getModel()).getValue());
+        }
+
+        Object value = spinner.getValue();
+
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+
+        return ((Number) ((SpinnerNumberModel) spinner.getModel()).getValue()).intValue();
+    }
+
+    private String configChangeMessage() {
+        if (gameStarted || placedShips > 0) {
+            return "Config saved. Changes apply to the next New Game.";
+        }
+
+        return "Config saved. Press New Game to rebuild the board with these settings.";
+    }
+
+    private void syncDifficultyFromLegacySelector() {
+        Difficulty selected = (Difficulty) difficultyBox.getSelectedItem();
+        GameConfig.getInstance().setDifficulty(selected);
+
+        if (!gameStarted && !gameOver) {
+            config.setDifficulty(selected);
+        }
+    }
+
+    private void syncLegacyDifficultySelector(Difficulty difficulty) {
+        difficultyBox.setSelectedItem(difficulty);
+    }
+
     private void toggleDirection() {
         Direction selected = (Direction) directionBox.getSelectedItem();
         directionBox.setSelectedItem(selected == Direction.HORIZONTAL ? Direction.VERTICAL : Direction.HORIZONTAL);
@@ -231,16 +412,35 @@ public class Game extends JFrame implements GameCallback {
         SwingUtilities.invokeLater(() -> new Game().start());
     }
 
+    private void useSelectedSkill() {
+        if (gameOver || !gameStarted || !playerTurn || awaitingSkillInput) {
+            return;
+        }
+
+        int idx = skillShipBox.getSelectedIndex();
+
+        if (idx < 0 || idx >= player.getShips().size()) {
+            return;
+        }
+
+        Ship ship = player.getShips().get(idx);
+        ship.useSkill(player.getBoard(), ai.getBoard(), this);
+        refreshSkillShipBox();
+        refreshBoards();
+    }
+
     private void handlePlayerBoardClick(int row, int col) {
+        if (gameOver) {
+            return;
+        }
+
         if (gameStarted) {
             if (awaitingSkillInput && pendingCoordTarget == CoordTarget.OWN_BOARD && pendingCoordConsumer != null) {
-                awaitingSkillInput = false;
-                pendingCoordTarget = null;
-                CoordConsumer consumer = pendingCoordConsumer;
-                pendingCoordConsumer = null;
+                CoordConsumer consumer = consumePendingCoordConsumer();
                 consumer.accept(row, col);
                 refreshSkillShipBox();
                 refreshBoards();
+                updateControlsEnabled();
                 return;
             }
 
@@ -248,6 +448,10 @@ public class Game extends JFrame implements GameCallback {
                 statusLabel.setText("That skill is waiting for a target on the AI board.");
             }
 
+            return;
+        }
+
+        if (placedShips >= config.getShipsPerType()) {
             return;
         }
 
@@ -261,43 +465,58 @@ public class Game extends JFrame implements GameCallback {
 
         player.addShip(ship);
         placedShips++;
-        setupLabel.setText("Ships placed: " + placedShips + " / " + GameConfig.SHIP_COUNT);
+        setupLabel.setText("Ships placed: " + placedShips + " / " + config.getShipsPerType());
         statusLabel.setText(ship.getName() + " placed. Choose the next ship and tile.");
 
-        if (placedShips == GameConfig.SHIP_COUNT) {
+        if (placedShips == config.getShipsPerType()) {
             finishSetup();
         }
 
         refreshBoards();
+        updateControlsEnabled();
     }
 
     private void finishSetup() {
-        difficultyBox.setEnabled(false);
-        shipBox.setEnabled(false);
-        directionBox.setEnabled(false);
+        if (gameOver) {
+            return;
+        }
+
         ai.setDifficulty((Difficulty) difficultyBox.getSelectedItem());
-        placeAiShips();
+
+        if (!placeAiShips()) {
+            gameOver = true;
+            turnLabel.setText("Setup Failed");
+            setupLabel.setText("AI fleet could not be placed.");
+            statusLabel.setText("Could not place the AI fleet with this configuration. Press New Game after changing config.");
+            updateControlsEnabled();
+            refreshBoards();
+            return;
+        }
+
         gameStarted = true;
         playerTurn = true;
-        attacksLeft = GameConfig.ATTACKS_PER_TURN;
-        turnLabel.setText("Player Turn");
+        attacksLeft = config.getAttacksPerRound();
+        turnLabel.setText("Player Turn - " + attacksLeft + " attacks left");
         setupLabel.setText("Attack the concealed AI board.");
         statusLabel.setText("Game start. You have " + attacksLeft + " attacks.");
         refreshSkillShipBox();
+        updateControlsEnabled();
     }
 
-    private void placeAiShips() {
-        Random random = new Random();
+    private boolean placeAiShips() {
+        for (int i = 0; i < config.getShipsPerType(); i++) {
+            boolean placed = false;
 
-        for (int i = 0; i < GameConfig.SHIP_COUNT; i++) {
-            Ship ship = ai.randomShip();
-
-            if (random.nextBoolean()) {
-                ship.rotate();
+            for (int attempt = 0; attempt < AI_SHIP_CREATION_ATTEMPTS && !placed; attempt++) {
+                placed = ai.placeShipRandomly(ai.randomShip());
             }
 
-            ai.placeShipRandomly(ship);
+            if (!placed) {
+                return false;
+            }
         }
+
+        return true;
     }
 
     private Ship createSelectedShip() {
@@ -314,6 +533,10 @@ public class Game extends JFrame implements GameCallback {
     }
 
     private void checkWinCondition() {
+        if (gameOver) {
+            return;
+        }
+
         if (ai.allShipsSunk()) {
             revealEnemyShips = true;
             endGame("Player wins. All AI ships are sunk.");
@@ -321,15 +544,16 @@ public class Game extends JFrame implements GameCallback {
     }
 
     private void handleEnemyBoardClick(int row, int col) {
+        if (gameOver) {
+            return;
+        }
+
         if (awaitingSkillInput && pendingCoordTarget == CoordTarget.ENEMY_BOARD && pendingCoordConsumer != null) {
-            awaitingSkillInput = false;
-            pendingCoordTarget = null;
-            CoordConsumer consumer = pendingCoordConsumer;
-            pendingCoordConsumer = null;
+            CoordConsumer consumer = consumePendingCoordConsumer();
             consumer.accept(row, col);
             refreshSkillShipBox();
             refreshBoards();
-            checkWinCondition();
+            updateControlsEnabled();
             return;
         }
 
@@ -338,7 +562,7 @@ public class Game extends JFrame implements GameCallback {
             return;
         }
 
-        if (!gameStarted || !playerTurn) {
+        if (!canUseAttack()) {
             return;
         }
 
@@ -350,7 +574,6 @@ public class Game extends JFrame implements GameCallback {
         }
 
         ai.getBoard().attackTile(row, col);
-        attacksLeft--;
 
         if (tile.hasShip()) {
             Ship ship = tile.getShip();
@@ -365,30 +588,45 @@ public class Game extends JFrame implements GameCallback {
                 statusLabel.setText("Red explosion. Hit on an enemy ship.");
             }
         } else {
-            statusLabel.setText("Miss. " + attacksLeft + " attacks left.");
+            statusLabel.setText("Miss.");
         }
 
+        consumeAttack();
         refreshBoards();
-        checkWinCondition();
+        updateControlsEnabled();
+    }
 
-        if (!gameStarted) {
-            return;
-        }
+    private CoordConsumer consumePendingCoordConsumer() {
+        awaitingSkillInput = false;
+        pendingCoordTarget = null;
+        CoordConsumer consumer = pendingCoordConsumer;
+        pendingCoordConsumer = null;
+        return consumer;
+    }
 
-        if (attacksLeft == 0) {
-            startAiTurn();
-        } else {
-            turnLabel.setText("Player Turn - " + attacksLeft + " attacks left");
-        }
+    private void clearPendingSkillInput() {
+        awaitingSkillInput = false;
+        pendingCoordTarget = null;
+        pendingCoordConsumer = null;
     }
 
     private void startAiTurn() {
+        if (gameOver) {
+            return;
+        }
+
         playerTurn = false;
         turnLabel.setText("AI Turn");
         statusLabel.setText("AI is targeting your board...");
+        updateControlsEnabled();
 
         Timer timer = new Timer(650, e -> {
             ((Timer) e.getSource()).stop();
+
+            if (gameOver) {
+                return;
+            }
+
             ai.performTurn(player);
             showAiAttackResult();
         });
@@ -397,11 +635,15 @@ public class Game extends JFrame implements GameCallback {
     }
 
     private void showAiAttackResult() {
+        if (gameOver) {
+            return;
+        }
+
         int hits = 0;
         int misses = 0;
 
-        for (int r = 0; r < GameConfig.BOARD_SIZE; r++) {
-            for (int c = 0; c < GameConfig.BOARD_SIZE; c++) {
+        for (int r = 0; r < player.getBoard().getRows(); r++) {
+            for (int c = 0; c < player.getBoard().getCols(); c++) {
                 Tile tile = player.getBoard().getTile(r, c);
 
                 if (tile.isRecentlyAttacked()) {
@@ -442,23 +684,44 @@ public class Game extends JFrame implements GameCallback {
 
         Timer timer = new Timer(900, e -> {
             ((Timer) e.getSource()).stop();
+
+            if (gameOver) {
+                return;
+            }
+
             player.getBoard().clearRecentAttacks();
-            attacksLeft = GameConfig.ATTACKS_PER_TURN;
+            attacksLeft = config.getAttacksPerRound();
             playerTurn = true;
             turnLabel.setText("Player Turn - " + attacksLeft + " attacks left");
             statusLabel.setText("Your turn. Attack the AI board.");
             refreshBoards();
+            updateControlsEnabled();
         });
         timer.setRepeats(false);
         timer.start();
     }
 
     private void endGame(String message) {
+        gameOver = true;
         gameStarted = false;
         playerTurn = false;
+        clearPendingSkillInput();
         turnLabel.setText("Game Over");
         statusLabel.setText(message);
+        updateControlsEnabled();
         refreshBoards();
+    }
+
+    private void updateControlsEnabled() {
+        boolean setupOpen = !gameStarted && !gameOver;
+        difficultyBox.setEnabled(setupOpen);
+        shipBox.setEnabled(setupOpen);
+        directionBox.setEnabled(setupOpen);
+        rotateButton.setEnabled(setupOpen);
+        skillShipBox.setEnabled(gameStarted && playerTurn && !gameOver);
+        skillButton.setEnabled(gameStarted && playerTurn && !gameOver);
+        playerBoardPanel.setBoardInteractionEnabled(!gameOver);
+        enemyBoardPanel.setBoardInteractionEnabled(!gameOver);
     }
 
     private void refreshBoards() {

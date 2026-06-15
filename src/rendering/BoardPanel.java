@@ -43,6 +43,7 @@ public class BoardPanel extends JPanel {
     private final boolean playerBoard;
     private final TileButton[][] buttons;
     private final Supplier<Boolean> gameStartedSupplier;
+    private final Supplier<Boolean> gameOverSupplier;
     private final Supplier<Boolean> playerTurnSupplier;
     private final Supplier<Boolean> revealEnemyShipsSupplier;
     private final Supplier<Ship> selectedShipSupplier;
@@ -52,33 +53,44 @@ public class BoardPanel extends JPanel {
     public BoardPanel(
             Board board,
             boolean playerBoard,
-            int boardSize,
             Supplier<Boolean> gameStartedSupplier,
+            Supplier<Boolean> gameOverSupplier,
             Supplier<Boolean> playerTurnSupplier,
             Supplier<Boolean> revealEnemyShipsSupplier,
             Supplier<Ship> selectedShipSupplier,
             Supplier<Direction> directionSupplier,
             BiConsumer<Integer, Integer> clickHandler
     ) {
-        super(new GridLayout(boardSize, boardSize, 2, 2));
+        super(new GridLayout(board.getRows(), board.getCols(), 2, 2));
         this.board = board;
         this.playerBoard = playerBoard;
         this.gameStartedSupplier = gameStartedSupplier;
+        this.gameOverSupplier = gameOverSupplier;
         this.playerTurnSupplier = playerTurnSupplier;
         this.revealEnemyShipsSupplier = revealEnemyShipsSupplier;
         this.selectedShipSupplier = selectedShipSupplier;
         this.directionSupplier = directionSupplier;
         this.clickHandler = clickHandler;
-        buttons = new TileButton[boardSize][boardSize];
+        buttons = new TileButton[board.getRows()][board.getCols()];
 
         setBackground(PANEL_BACKGROUND);
         setBorder(new EmptyBorder(8, 8, 8, 8));
 
-        for (int r = 0; r < boardSize; r++) {
-            for (int c = 0; c < boardSize; c++) {
+        for (int r = 0; r < board.getRows(); r++) {
+            for (int c = 0; c < board.getCols(); c++) {
                 TileButton button = new TileButton(r, c);
                 buttons[r][c] = button;
                 add(button);
+            }
+        }
+    }
+
+    public void setBoardInteractionEnabled(boolean enabled) {
+        setEnabled(enabled);
+
+        for (TileButton[] row : buttons) {
+            for (TileButton button : row) {
+                button.setEnabled(enabled);
             }
         }
     }
@@ -92,7 +104,7 @@ public class BoardPanel extends JPanel {
     }
 
     private void showPlacementHover(int row, int col, boolean show) {
-        if (!playerBoard || gameStartedSupplier.get()) {
+        if (!playerBoard || gameStartedSupplier.get() || gameOverSupplier.get()) {
             return;
         }
 
@@ -119,7 +131,7 @@ public class BoardPanel extends JPanel {
     }
 
     private void showTargetHover(TileButton button, boolean show) {
-        if (playerBoard || !gameStartedSupplier.get() || !playerTurnSupplier.get()) {
+        if (playerBoard || !gameStartedSupplier.get() || gameOverSupplier.get() || !playerTurnSupplier.get()) {
             return;
         }
 
@@ -225,7 +237,9 @@ public class BoardPanel extends JPanel {
             this.row = row;
             this.col = col;
 
-            setPreferredSize(new Dimension(42, 42));
+            int maxDimension = Math.max(board.getRows(), board.getCols());
+            int cellSize = Math.max(22, Math.min(42, 480 / maxDimension));
+            setPreferredSize(new Dimension(cellSize, cellSize));
             setFocusPainted(false);
             setBorderPainted(false);
             setOpaque(true);
@@ -233,7 +247,11 @@ public class BoardPanel extends JPanel {
             setToolTipText(row + ", " + col);
             setAlignmentX(Component.CENTER_ALIGNMENT);
 
-            addActionListener(e -> clickHandler.accept(row, col));
+            addActionListener(e -> {
+                if (!gameOverSupplier.get()) {
+                    clickHandler.accept(row, col);
+                }
+            });
 
             addMouseListener(new MouseAdapter() {
                 @Override

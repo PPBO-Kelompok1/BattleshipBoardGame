@@ -1,5 +1,6 @@
 package entities;
 
+import config.GameConfig;
 import core.Difficulty;
 import core.Direction;
 import physics.Board;
@@ -15,10 +16,10 @@ public class AIPlayer extends Player {
     private final Random random;
     private final AttackPlanner attackPlanner;
 
-    public AIPlayer(int rows, int cols) {
+    public AIPlayer(int rows, int cols, GameConfig config) {
         super(rows, cols);
         random = new Random();
-        attackPlanner = new AttackPlanner(random);
+        attackPlanner = new AttackPlanner(random, config);
     }
 
     public void setDifficulty(Difficulty difficulty) {
@@ -44,14 +45,16 @@ public class AIPlayer extends Player {
         }
     }
 
-    public void placeShipRandomly(Ship ship) {
+    public boolean placeShipRandomly(Ship ship) {
         Direction originalDirection = ship.getDirection();
 
         if (tryPlaceRandomly(ship, true) || tryPlaceRandomly(ship, false)) {
             addShip(ship);
-        } else {
-            ship.setDirection(originalDirection);
+            return true;
         }
+
+        ship.setDirection(originalDirection);
+        return false;
     }
 
     private boolean tryPlaceRandomly(Ship ship, boolean requireSeparation) {

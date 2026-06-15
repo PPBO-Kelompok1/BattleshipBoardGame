@@ -21,12 +21,17 @@ public class Destroyer extends Ship {
     }
 
     private void doStrike(Board enemyBoard, GameCallback callback, int strikeNum) {
-        if (strikeNum > 2) {
+        if (strikeNum > 2 || !callback.canUseAttack() || callback.isGameOver()) {
             skillUsed = true;
             return;
         }
 
         callback.requestCoordinates("Double Strike #" + strikeNum + " - pick a tile", (row, col) -> {
+            if (!callback.canUseAttack() || callback.isGameOver()) {
+                skillUsed = true;
+                return;
+            }
+
             if (!enemyBoard.isInside(row, col)) {
                 callback.showMessage("Invalid target. Pick again.");
                 doStrike(enemyBoard, callback, strikeNum);
@@ -46,7 +51,12 @@ public class Destroyer extends Ship {
                     ? (enemyBoard.isShipSunk(tile.getShip()) ? tile.getShip().getName() + " SUNK!" : "HIT!")
                     : "Miss.";
             callback.showMessage("Strike #" + strikeNum + ": " + result);
-            doStrike(enemyBoard, callback, strikeNum + 1);
+
+            if (callback.consumeAttack()) {
+                doStrike(enemyBoard, callback, strikeNum + 1);
+            } else {
+                skillUsed = true;
+            }
         }, CoordTarget.ENEMY_BOARD);
     }
 }

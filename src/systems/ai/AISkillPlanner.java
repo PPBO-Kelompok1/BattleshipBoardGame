@@ -23,10 +23,12 @@ public class AISkillPlanner {
 
     private final Random random;
     private final List<int[]> hintedTiles;
+    private final GameConfig config;
     private String lastSkillMessage;
 
-    public AISkillPlanner(Random random) {
+    public AISkillPlanner(Random random, GameConfig config) {
         this.random = random;
+        this.config = config;
         hintedTiles = new ArrayList<>();
         lastSkillMessage = "";
     }
@@ -149,8 +151,10 @@ public class AISkillPlanner {
 
         int attacks = 0;
 
+        int maxSkillAttacks = Math.min(2, config.getAttacksPerRound());
+
         for (int[] tile : targets) {
-            if (attacks >= 2) {
+            if (attacks >= maxSkillAttacks) {
                 break;
             }
 
@@ -198,7 +202,7 @@ public class AISkillPlanner {
 
         for (int row = area[0]; row < area[0] + 2; row++) {
             for (int col = area[1]; col < area[1] + 2; col++) {
-                if (attacks >= GameConfig.ATTACKS_PER_TURN) {
+                if (attacks >= config.getAttacksPerRound()) {
                     break;
                 }
 

@@ -18,6 +18,10 @@ public class Battleship extends Ship {
         }
 
         callback.requestCoordinates("Area Bombardment - pick top-left of 2x2", (row, col) -> {
+            if (!callback.canUseAttack() || callback.isGameOver()) {
+                return;
+            }
+
             if (!enemyBoard.isInside(row, col) || !enemyBoard.isInside(row + 1, col + 1)) {
                 callback.showMessage("Area Bombardment target must keep the full 2x2 area inside the board.");
                 return;
@@ -37,6 +41,15 @@ public class Battleship extends Ship {
                     enemyBoard.attackTile(r, c);
                     log.append(tile.hasShip() ? "Hit" : "Miss")
                             .append(" at (").append(r).append(",").append(c).append(")<br>");
+
+                    if (!callback.consumeAttack()) {
+                        if (callback.isGameOver()) {
+                            return;
+                        }
+
+                        callback.showMessage(log.toString());
+                        return;
+                    }
                 }
             }
 
