@@ -2,6 +2,9 @@
 
 A Java Swing Battleship game refactored from a single monolithic source file into focused modules.
 
+## Play/Run
+Download an executable file (.exe) from releases and run it on your device (require at least java 17)
+
 ## Setup
 
 Requires a JDK that supports modern switch expressions.
